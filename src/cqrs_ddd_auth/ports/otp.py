@@ -8,7 +8,8 @@ including TOTP, Email, and SMS methods.
 from typing import Protocol, Optional
 from datetime import datetime
 
-from cqrs_ddd_auth.domain.value_objects import UserClaims, TOTPSecret, OTPChallenge
+from cqrs_ddd_auth.domain.value_objects import UserClaims, TOTPSecret
+from cqrs_ddd_auth.domain.aggregates import OTPChallenge
 
 
 class OTPServicePort(Protocol):
