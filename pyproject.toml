@@ -26,9 +26,10 @@ classifiers = [
     "Typing :: Typed",
 ]
 
-# Core dependency: the CQRS/DDD toolkit
+# Core dependencies
 dependencies = [
     "py-cqrs-ddd-toolkit>=0.1.0",
+    "pyotp>=2.9.0",  # TOTP/HOTP for 2FA
 ]
 
 [project.optional-dependencies]

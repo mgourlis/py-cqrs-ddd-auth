@@ -4,17 +4,17 @@ A **toolkit-native** authentication and authorization library built using CQRS, 
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-- 🔐 **Domain-Driven Authentication**: Proper Aggregates, Commands, and Events for authentication flows
-- 🔌 **Pluggable Identity Providers**: Infrastructure adapters for Keycloak, OAuth2, and custom IdPs
-- 🛡️ **ABAC Integration**: Authorization as a query leveraging the Stateful ABAC Policy Engine
-- 📲 **2FA as a Saga**: Multi-step authentication flows with OTP support
-- 🚀 **Framework Adapters**: Thin bridges for FastAPI and Django
+- **Domain-Driven Authentication**: Proper Aggregates, Commands, and Events for authentication flows
+- **Pluggable Identity Providers**: Infrastructure adapters for Keycloak, OAuth2, and custom IdPs
+- **ABAC Integration**: Authorization as a query leveraging the Stateful ABAC Policy Engine
+- **2FA as a Saga**: Multi-step authentication flows with OTP support
+- **Framework Adapters**: Thin bridges for FastAPI and Django
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -29,7 +29,7 @@ A **toolkit-native** authentication and authorization library built using CQRS, 
 
 ---
 
-## 📦 Installation
+## Installation
 
 ```bash
 # Core library
@@ -47,7 +47,7 @@ pip install py-cqrs-ddd-auth[all]
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
 ```python
 from cqrs_ddd_auth.application.commands import AuthenticateWithCredentials
@@ -70,6 +70,6 @@ result = await mediator.send(AuthenticateWithCredentials(
 
 ---
 
-## 📄 License
+## License
 
 MIT License - see [LICENSE](LICENSE) for details.

@@ -48,7 +48,6 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# User requested exclusions
-docs/
-# If there is a demo folder like in the other projects
+# Demo folder if present
 demo/
+
