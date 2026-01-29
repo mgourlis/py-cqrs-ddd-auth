@@ -126,10 +126,10 @@ def get_access_token() -> Optional[str]:
 │                                                                 │
 │  Value Objects:                                                 │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────────┐ │
-│  │ Credentials     │  │ OTPCode         │  │ UserClaims       │ │
-│  │ - username      │  │ - value         │  │ - sub            │ │
-│  │ - password      │  │ - hash()        │  │ - email          │ │
-│  │                 │  │ - verify()      │  │ - groups         │ │
+│  │ Credentials     │  │ TOTPSecret      │  │ UserClaims       │ │
+│  │ - username      │  │ - secret        │  │ - sub            │ │
+│  │ - password      │  │ - verify_code() │  │ - email          │ │
+│  │                 │  │ - generate()    │  │ - groups         │ │
 │  └─────────────────┘  └─────────────────┘  └──────────────────┘ │
 │                                                                 │
 │  Domain Events:                                                 │
