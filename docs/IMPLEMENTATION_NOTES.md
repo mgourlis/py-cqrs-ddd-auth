@@ -70,8 +70,9 @@ Implement the core domain model from Section 3 of the proposal.
 **Files to create:**
 1. `src/cqrs_ddd_auth/domain/value_objects.py`
    - `Credentials` (frozen dataclass)
-   - `OTPCode` (with hash/verify/generate methods)
+   - `TOTPSecret` (pyotp-based with verify_code/generate methods)
    - `UserClaims` (decoded JWT representation)
+   - `OTPChallenge` (for email/SMS challenges)
 
 2. `src/cqrs_ddd_auth/domain/aggregates.py`
    - `AuthSessionStatus` enum
@@ -85,6 +86,7 @@ Implement the core domain model from Section 3 of the proposal.
    - `AuthenticationSucceeded`
    - `AuthenticationFailed`
    - `SessionRevoked`
+
 
 ---
 
