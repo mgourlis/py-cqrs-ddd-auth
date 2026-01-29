@@ -98,31 +98,3 @@ class UserClaims(ValueObject):
             tenant_id=self.attributes.get("tenant_id")
         )
 
-
-@dataclass
-class OTPChallenge:
-    """
-    Stored OTP challenge record for email/SMS verification.
-    
-    This is a mutable data structure (not frozen) because it
-    tracks state changes like attempts and status.
-    """
-    user_id: str
-    method: str  # 'email', 'sms', 'totp'
-    secret: str  # Base32 secret for pyotp verification
-    created_at: datetime
-    expires_at: datetime
-    attempts: int = 0
-    status: str = "pending"  # pending, used, expired
-    
-    def is_expired(self) -> bool:
-        """Check if the challenge has expired."""
-        return datetime.now(timezone.utc) > self.expires_at
-    
-    def increment_attempts(self) -> None:
-        """Increment the failed attempts counter."""
-        self.attempts += 1
-    
-    def mark_used(self) -> None:
-        """Mark the challenge as successfully used."""
-        self.status = "used"

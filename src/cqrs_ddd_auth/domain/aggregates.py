@@ -38,6 +38,116 @@ class AuthSessionStatus(str, Enum):
     EXPIRED = "expired"
 
 
+class OTPChallengeStatus(str, Enum):
+    """Status of an OTP challenge."""
+    PENDING = "pending"
+    USED = "used"
+    EXPIRED = "expired"
+    MAX_ATTEMPTS = "max_attempts"
+
+
+# ═══════════════════════════════════════════════════════════════
+# ENTITIES
+# ═══════════════════════════════════════════════════════════════
+
+from cqrs_ddd.ddd import Entity
+
+
+class OTPChallenge(Entity):
+    """
+    Entity representing an OTP challenge for email/SMS verification.
+    
+    Has identity (user_id + method) and mutable state (attempts, status).
+    Challenges expire after a configurable time.
+    """
+    
+    MAX_ATTEMPTS = 5
+    
+    def __init__(
+        self,
+        entity_id: str = None,
+        user_id: str = "",
+        method: str = "",  # 'email', 'sms'
+        secret: str = "",  # Base32 secret for pyotp verification
+        expires_at: datetime = None,
+        attempts: int = 0,
+        status: OTPChallengeStatus = OTPChallengeStatus.PENDING,
+        **kwargs
+    ):
+        super().__init__(entity_id=entity_id, **kwargs)
+        self.user_id = user_id
+        self.method = method
+        self.secret = secret
+        self.expires_at = expires_at or (datetime.now(timezone.utc) + timedelta(minutes=2))
+        self.attempts = attempts
+        self.status = status
+    
+    @classmethod
+    def create(
+        cls,
+        user_id: str,
+        method: str,
+        secret: str,
+        expiration_seconds: int = 120,
+    ) -> "OTPChallenge":
+        """Factory method to create a new OTP challenge."""
+        return cls(
+            entity_id=str(uuid.uuid4()),
+            user_id=user_id,
+            method=method,
+            secret=secret,
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=expiration_seconds),
+        )
+    
+    def is_expired(self) -> bool:
+        """Check if the challenge has expired."""
+        return datetime.now(timezone.utc) > self.expires_at
+    
+    def is_valid(self) -> bool:
+        """Check if the challenge can still be used."""
+        return (
+            self.status == OTPChallengeStatus.PENDING
+            and not self.is_expired()
+            and self.attempts < self.MAX_ATTEMPTS
+        )
+    
+    def increment_attempts(self) -> None:
+        """Increment the failed attempts counter."""
+        self.attempts += 1
+        self.increment_version()
+        
+        if self.attempts >= self.MAX_ATTEMPTS:
+            self.status = OTPChallengeStatus.MAX_ATTEMPTS
+    
+    def mark_used(self) -> None:
+        """Mark the challenge as successfully used."""
+        self.status = OTPChallengeStatus.USED
+        self.increment_version()
+    
+    def verify_code(self, code: str) -> bool:
+        """
+        Verify a code against this challenge using pyotp.
+        
+        Returns:
+            True if code is valid, False otherwise
+        """
+        if not self.is_valid():
+            return False
+        
+        import pyotp
+        
+        # Calculate interval based on expiration time
+        interval = int((self.expires_at - self.created_at).total_seconds())
+        totp = pyotp.TOTP(self.secret, digits=len(code), interval=interval)
+        
+        if totp.verify(code, valid_window=1):
+            self.mark_used()
+            return True
+        
+        self.increment_attempts()
+        return False
+
+
 # ═══════════════════════════════════════════════════════════════
 # MODIFICATIONS
 # ═══════════════════════════════════════════════════════════════

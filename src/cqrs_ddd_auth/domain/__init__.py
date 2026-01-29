@@ -7,7 +7,6 @@ from cqrs_ddd_auth.domain.value_objects import (
     Credentials,
     TOTPSecret,
     UserClaims,
-    OTPChallenge,
 )
 from cqrs_ddd_auth.domain.events import (
     AuthSessionCreated,
@@ -25,6 +24,8 @@ from cqrs_ddd_auth.domain.events import (
 from cqrs_ddd_auth.domain.aggregates import (
     AuthSession,
     AuthSessionStatus,
+    OTPChallenge,
+    OTPChallengeStatus,
     CreateAuthSessionModification,
     UpdateAuthSessionModification,
 )
@@ -37,7 +38,6 @@ __all__ = [
     "Credentials",
     "TOTPSecret",
     "UserClaims",
-    "OTPChallenge",
     # Events
     "AuthSessionCreated",
     "CredentialsValidated",
@@ -50,9 +50,12 @@ __all__ = [
     "SessionRevoked",
     "TokenRefreshed",
     "TokenExpired",
-    # Aggregates & Modifications
+    # Aggregates & Entities
     "AuthSession",
     "AuthSessionStatus",
+    "OTPChallenge",
+    "OTPChallengeStatus",
+    # Modifications
     "CreateAuthSessionModification",
     "UpdateAuthSessionModification",
 ]
