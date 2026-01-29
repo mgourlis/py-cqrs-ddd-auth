@@ -158,22 +158,6 @@ class Credentials(ValueObject):
     username: str
     password: str  # Never persisted, only used in-memory
 
-@dataclass(frozen=True)
-class OTPCode(ValueObject):
-    """One-time password code."""
-    value: str
-    
-    def hash(self) -> str:
-        return hashlib.sha256(self.value.encode()).hexdigest()
-    
-    def verify(self, hashed: str) -> bool:
-        return secrets.compare_digest(self.hash(), hashed)
-    
-    @classmethod
-    def generate(cls, length: int = 6) -> "OTPCode":
-        value = "".join(secrets.choice("0123456789") for _ in range(length))
-        return cls(value=value)
-
 
 @dataclass(frozen=True)
 class TOTPSecret(ValueObject):
