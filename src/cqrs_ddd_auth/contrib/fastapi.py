@@ -335,6 +335,11 @@ class TokenRefreshMiddleware(BaseHTTPMiddleware):
         cookie_max_age: int = 86400,
     ):
         super().__init__(app)
+        
+        # Resolve IDP if it's the dummy callable (Standalone mode)
+        if not HAS_DI and callable(idp):
+            idp = idp()
+            
         if idp is None:
             idp = create_default_idp()
             
@@ -411,6 +416,11 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         public_paths: Optional[List[str]] = None,
     ):
         super().__init__(app)
+        
+        # Resolve IDP if it's the dummy callable (Standalone mode)
+        if not HAS_DI and callable(idp):
+            idp = idp()
+            
         if idp is None:
             idp = create_default_idp()
             

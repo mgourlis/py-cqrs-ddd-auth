@@ -184,6 +184,10 @@ class TokenRefreshMiddleware:
     ):
         self.get_response = get_response
         
+        # Resolve IDP if it's the dummy callable (Standalone mode)
+        if not HAS_DI and callable(idp):
+            idp = idp()
+            
         if idp is None:
             idp = create_default_idp()
                 
@@ -282,6 +286,10 @@ class AuthenticationMiddleware:
     ):
         self.get_response = get_response
         
+        # Resolve IDP if it's the dummy callable (Standalone mode)
+        if not HAS_DI and callable(idp):
+            idp = idp()
+            
         if idp is None:
             idp = create_default_idp()
                 
