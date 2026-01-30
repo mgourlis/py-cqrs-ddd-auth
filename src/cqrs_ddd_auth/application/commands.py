@@ -8,7 +8,7 @@ Uses Command base class from py-cqrs-ddd-toolkit.
 """
 
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, List
 
 from cqrs_ddd.core import Command
 
@@ -18,21 +18,44 @@ class AuthenticateWithCredentials(Command):
     """
     Initiate authentication with username/password.
     
-    This is the primary entry point for the authentication flow.
-    May result in immediate success (tokens) or require OTP.
+    Supports two modes:
+    1. Stateless: No session_id needed, OTP can be sent in same request
+    2. Stateful: Session tracking for multi-step flows
+    
+    Stateless mode (like your legacy Django code):
+        - Authenticate credentials → if OTP required, return otp_required
+        - Client re-sends credentials + otp_method + otp_code
+        - No server-side session needed
+    
+    Stateful mode:
+        - Creates AuthSession for tracking
+        - Use session_id for subsequent ValidateOTP command
     """
     username: str
     password: str
+    
+    # Session tracking (optional - enable for stateful mode)
+    track_session: bool = False
     ip_address: str = ""
     user_agent: str = ""
+    
+    # Inline OTP for stateless mode (like legacy flow)
+    otp_method: Optional[str] = None  # totp, email, sms
+    otp_code: Optional[str] = None
+    
+    # Optional role/group checking
+    required_groups: Optional[List[str]] = None  # User must be in at least one
 
 
 @dataclass(kw_only=True)
 class ValidateOTP(Command):
     """
-    Validate a one-time password.
+    Validate a one-time password (stateful mode).
     
-    Called after AuthenticateWithCredentials when OTP is required.
+    Called after AuthenticateWithCredentials when:
+    - track_session=True was used
+    - OTP is required
+    - Client sends session_id + OTP code
     """
     session_id: str
     code: str
@@ -45,9 +68,12 @@ class SendOTPChallenge(Command):
     Request an OTP challenge to be sent.
     
     Used for email/SMS methods where the code needs to be delivered.
+    Can work with or without session_id.
     """
-    session_id: str
-    method: str  # email, sms
+    session_id: Optional[str] = None  # Optional for stateless mode
+    user_claims_json: Optional[str] = None  # Alternative: pass claims directly
+    access_token: Optional[str] = None  # Alternative: pass token to decode
+    method: str = ""  # email, sms
 
 
 @dataclass(kw_only=True)
@@ -64,7 +90,7 @@ class Logout(Command):
     Terminate the current session and invalidate tokens.
     """
     refresh_token: str
-    session_id: Optional[str] = None
+    session_id: Optional[str] = None  # Optional - for stateful mode
 
 
 @dataclass(kw_only=True)

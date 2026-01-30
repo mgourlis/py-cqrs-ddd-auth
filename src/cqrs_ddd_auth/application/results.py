@@ -33,24 +33,31 @@ class AuthResult:
     """
     Result of an authentication operation.
     
+    Supports both stateless and stateful modes:
+    - session_id is None for stateless mode
+    - session_id is set for stateful mode (track_session=True)
+    
     Use factory methods to create instances.
     """
     status: AuthStatus
-    session_id: str
+    session_id: Optional[str] = None  # None for stateless mode
     tokens: Optional[TokenPair] = None
     user_id: Optional[str] = None
     username: Optional[str] = None
+    user_claims: Optional[dict] = None  # Decoded JWT claims
     available_otp_methods: list[str] = field(default_factory=list)
     error_message: Optional[str] = None
+    error_code: Optional[str] = None  # e.g., "OTP_REQUIRED", "INVALID_CREDENTIALS"
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     
     @classmethod
     def success(
         cls,
-        session_id: str,
         tokens: TokenPair,
         user_id: str,
         username: str,
+        session_id: Optional[str] = None,
+        user_claims: Optional[dict] = None,
     ) -> "AuthResult":
         """Create a successful authentication result."""
         return cls(
@@ -59,32 +66,43 @@ class AuthResult:
             tokens=tokens,
             user_id=user_id,
             username=username,
+            user_claims=user_claims,
         )
     
     @classmethod
     def otp_required(
         cls,
-        session_id: str,
         available_methods: list[str],
+        session_id: Optional[str] = None,
+        message: str = "OTP verification required",
     ) -> "AuthResult":
-        """Create a result requiring OTP verification."""
+        """
+        Create a result requiring OTP verification.
+        
+        For stateless mode: session_id is None
+        For stateful mode: session_id is set
+        """
         return cls(
             status=AuthStatus.OTP_REQUIRED,
             session_id=session_id,
             available_otp_methods=available_methods,
+            error_code="OTP_REQUIRED",
+            error_message=message,
         )
     
     @classmethod
     def failed(
         cls,
-        session_id: str,
         error_message: str,
+        error_code: str = "AUTHENTICATION_FAILED",
+        session_id: Optional[str] = None,
     ) -> "AuthResult":
         """Create a failed authentication result."""
         return cls(
             status=AuthStatus.FAILED,
             session_id=session_id,
             error_message=error_message,
+            error_code=error_code,
         )
     
     @property
@@ -106,7 +124,7 @@ class OTPChallengeResult:
     success: bool
     message: str  # e.g., "Code sent to j****@example.com"
     method: str
-    session_id: str
+    session_id: Optional[str] = None  # None for stateless mode
 
 
 @dataclass
