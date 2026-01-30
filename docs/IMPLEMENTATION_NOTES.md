@@ -216,20 +216,32 @@ Implement handlers for user 2FA enrollment.
 
 ---
 
-## Step 11: Queries & Query Handlers
+## Step 11: [DONE] Queries & Query Handlers
 
 Implement read-side queries for user info and session management.
 
-**Files to create/modify:**
+**Files created/modified:**
 1. `src/cqrs_ddd_auth/application/queries.py`
-   - `GetUserInfo` Query
-   - `GetAvailableOTPMethods` Query
-   - `ListActiveSessions` Query (for session management UI)
+   - `GetUserInfo` Query - Get user profile from access token
+   - `GetAvailableOTPMethods` Query - List available 2FA methods
+   - `ListActiveSessions` Query - For session management UI
+   - `GetSessionDetails` Query - Get specific session info
+   - `CheckTOTPEnabled` Query - Check if user has TOTP configured
 
-2. `src/cqrs_ddd_auth/application/handlers.py`
-   - `GetUserInfoHandler` - Returns user claims + type-level permissions
+2. `src/cqrs_ddd_auth/application/results.py`
+   - `UserInfoResult` - User profile with claims and 2FA status
+   - `AvailableOTPMethodsResult` - List of OTP methods with status
+   - `OTPMethodInfo` - Individual OTP method info
+   - `ListSessionsResult` - List of sessions
+   - `SessionInfo` - Individual session details
+   - `TOTPStatusResult` - TOTP enabled status
+
+3. `src/cqrs_ddd_auth/application/handlers.py`
+   - `GetUserInfoHandler` - Returns user claims + TOTP status
    - `GetAvailableOTPMethodsHandler` - Returns available 2FA methods
    - `ListActiveSessionsHandler` - Lists user's active sessions
+   - `GetSessionDetailsHandler` - Returns session details
+   - `CheckTOTPEnabledHandler` - Returns TOTP enabled status
 
 ---
 

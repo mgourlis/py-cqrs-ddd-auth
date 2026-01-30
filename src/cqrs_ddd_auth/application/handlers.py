@@ -590,3 +590,235 @@ class ConfirmTOTPSetupHandler(CommandHandler[bool]):
             correlation_id=command.correlation_id,
             causation_id=command.command_id,
         )
+
+
+# ═══════════════════════════════════════════════════════════════
+# QUERY HANDLERS
+# ═══════════════════════════════════════════════════════════════
+
+from cqrs_ddd.core import QueryHandler, QueryResponse
+
+from cqrs_ddd_auth.application.queries import (
+    GetUserInfo,
+    GetAvailableOTPMethods,
+    ListActiveSessions,
+    GetSessionDetails,
+    CheckTOTPEnabled,
+)
+from cqrs_ddd_auth.application.results import (
+    UserInfoResult,
+    AvailableOTPMethodsResult,
+    OTPMethodInfo,
+    ListSessionsResult,
+    SessionInfo,
+    TOTPStatusResult,
+)
+
+
+class GetUserInfoHandler(QueryHandler[UserInfoResult]):
+    """
+    Handle GetUserInfo query.
+    
+    Returns user profile information from decoded access token
+    or fetched from the IdP's userinfo endpoint.
+    """
+    
+    def __init__(
+        self,
+        idp: IdentityProviderPort,
+        totp_repo: Optional[TOTPSecretRepository] = None,
+    ):
+        super().__init__()
+        self.idp = idp
+        self.totp_repo = totp_repo
+    
+    async def handle(self, query: GetUserInfo) -> QueryResponse[UserInfoResult]:
+        user_claims = None
+        
+        # Get claims from access token
+        if query.access_token:
+            user_claims = await self.idp.decode_token(query.access_token)
+        elif query.user_id:
+            # Would need admin API to fetch by user_id
+            # For now, we require an access token
+            raise ValueError("access_token is required when user_id is not available")
+        else:
+            raise ValueError("Either access_token or user_id must be provided")
+        
+        # Check TOTP status if repository available
+        totp_enabled = False
+        if self.totp_repo and user_claims:
+            secret = await self.totp_repo.get_by_user_id(user_claims.sub)
+            totp_enabled = secret is not None
+        
+        result = UserInfoResult.from_claims(user_claims, totp_enabled=totp_enabled)
+        
+        return QueryResponse(result=result)
+
+
+class GetAvailableOTPMethodsHandler(QueryHandler[AvailableOTPMethodsResult]):
+    """
+    Handle GetAvailableOTPMethods query.
+    
+    Returns list of OTP methods available to the user
+    based on their configuration and available services.
+    """
+    
+    def __init__(
+        self,
+        idp: IdentityProviderPort,
+        otp_service: Optional[OTPServicePort] = None,
+        totp_repo: Optional[TOTPSecretRepository] = None,
+    ):
+        super().__init__()
+        self.idp = idp
+        self.otp_service = otp_service
+        self.totp_repo = totp_repo
+    
+    async def handle(self, query: GetAvailableOTPMethods) -> QueryResponse[AvailableOTPMethodsResult]:
+        user_claims = None
+        
+        # Get claims from access token
+        if query.access_token:
+            user_claims = await self.idp.decode_token(query.access_token)
+        elif query.user_id:
+            raise ValueError("access_token is required")
+        else:
+            raise ValueError("Either access_token or user_id must be provided")
+        
+        methods: List[OTPMethodInfo] = []
+        requires_otp = False
+        
+        if self.otp_service:
+            requires_otp = await self.otp_service.is_required_for_user(user_claims)
+            available = await self.otp_service.get_available_methods(user_claims)
+            
+            for method in available:
+                destination = None
+                enabled = False
+                
+                if method == "totp":
+                    # Check if TOTP is configured
+                    if self.totp_repo:
+                        secret = await self.totp_repo.get_by_user_id(user_claims.sub)
+                        enabled = secret is not None
+                elif method == "email":
+                    enabled = bool(user_claims.email)
+                    if user_claims.email:
+                        # Obfuscate email
+                        local, domain = user_claims.email.split("@")
+                        obfuscated = local[0] + "****" if len(local) > 1 else local + "****"
+                        destination = f"{obfuscated}@{domain}"
+                elif method == "sms":
+                    # Would need phone number from claims/attributes
+                    phone = user_claims.attributes.get("phone_number", "")
+                    enabled = bool(phone)
+                    if phone:
+                        destination = phone[:3] + "****" + phone[-2:] if len(phone) > 5 else "****"
+                
+                methods.append(OTPMethodInfo(
+                    method=method,
+                    enabled=enabled,
+                    destination=destination,
+                ))
+        
+        return QueryResponse(
+            result=AvailableOTPMethodsResult(
+                methods=methods,
+                requires_otp=requires_otp,
+            )
+        )
+
+
+class ListActiveSessionsHandler(QueryHandler[ListSessionsResult]):
+    """
+    Handle ListActiveSessions query.
+    
+    Returns list of active sessions for a user,
+    used for session management UI.
+    """
+    
+    def __init__(self, session_repo: AuthSessionRepository):
+        super().__init__()
+        self.session_repo = session_repo
+    
+    async def handle(self, query: ListActiveSessions) -> QueryResponse[ListSessionsResult]:
+        sessions = await self.session_repo.get_by_user_id(
+            user_id=query.user_id,
+            active_only=not query.include_expired,
+        )
+        
+        session_infos = []
+        for session in sessions:
+            session_infos.append(SessionInfo(
+                session_id=session.id,
+                status=session.status.value if hasattr(session.status, 'value') else str(session.status),
+                ip_address=session.ip_address,
+                user_agent=session.user_agent,
+                created_at=session.created_at,
+                expires_at=session.expires_at,
+                is_current=session.id == query.current_session_id,
+                otp_method=session.otp_method,
+            ))
+        
+        return QueryResponse(
+            result=ListSessionsResult(
+                sessions=session_infos,
+                total_count=len(session_infos),
+            )
+        )
+
+
+class GetSessionDetailsHandler(QueryHandler[SessionInfo]):
+    """
+    Handle GetSessionDetails query.
+    
+    Returns detailed information about a specific session.
+    """
+    
+    def __init__(self, session_repo: AuthSessionRepository):
+        super().__init__()
+        self.session_repo = session_repo
+    
+    async def handle(self, query: GetSessionDetails) -> QueryResponse[SessionInfo]:
+        session = await self.session_repo.get(query.session_id)
+        
+        if not session:
+            raise ValueError(f"Session not found: {query.session_id}")
+        
+        result = SessionInfo(
+            session_id=session.id,
+            status=session.status.value if hasattr(session.status, 'value') else str(session.status),
+            ip_address=session.ip_address,
+            user_agent=session.user_agent,
+            created_at=session.created_at,
+            expires_at=session.expires_at,
+            is_current=False,
+            otp_method=session.otp_method,
+        )
+        
+        return QueryResponse(result=result)
+
+
+class CheckTOTPEnabledHandler(QueryHandler[TOTPStatusResult]):
+    """
+    Handle CheckTOTPEnabled query.
+    
+    Returns whether TOTP 2FA is enabled for a user.
+    """
+    
+    def __init__(self, totp_repo: TOTPSecretRepository):
+        super().__init__()
+        self.totp_repo = totp_repo
+    
+    async def handle(self, query: CheckTOTPEnabled) -> QueryResponse[TOTPStatusResult]:
+        secret = await self.totp_repo.get_by_user_id(query.user_id)
+        
+        return QueryResponse(
+            result=TOTPStatusResult(
+                enabled=secret is not None,
+                user_id=query.user_id,
+                # configured_at would require storing metadata with the secret
+            )
+        )
+

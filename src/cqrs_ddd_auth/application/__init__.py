@@ -1,6 +1,6 @@
-"""Application layer for authentication - Commands, Handlers, Results."""
+"""Application layer for authentication - Commands, Queries, Handlers, Results."""
 
-from cqrs_ddd.core import CommandResponse
+from cqrs_ddd.core import CommandResponse, QueryResponse
 
 from cqrs_ddd_auth.application.commands import (
     AuthenticateWithCredentials,
@@ -13,6 +13,13 @@ from cqrs_ddd_auth.application.commands import (
     ConfirmTOTPSetup,
     DisableTOTP,
 )
+from cqrs_ddd_auth.application.queries import (
+    GetUserInfo,
+    GetAvailableOTPMethods,
+    ListActiveSessions,
+    GetSessionDetails,
+    CheckTOTPEnabled,
+)
 from cqrs_ddd_auth.application.results import (
     AuthStatus,
     AuthResult,
@@ -20,8 +27,16 @@ from cqrs_ddd_auth.application.results import (
     OTPChallengeResult,
     TOTPSetupResult,
     LogoutResult,
+    # Query results
+    UserInfoResult,
+    AvailableOTPMethodsResult,
+    OTPMethodInfo,
+    ListSessionsResult,
+    SessionInfo,
+    TOTPStatusResult,
 )
 from cqrs_ddd_auth.application.handlers import (
+    # Command handlers
     AuthenticateWithCredentialsHandler,
     ValidateOTPHandler,
     SendOTPChallengeHandler,
@@ -29,11 +44,18 @@ from cqrs_ddd_auth.application.handlers import (
     LogoutHandler,
     SetupTOTPHandler,
     ConfirmTOTPSetupHandler,
+    # Query handlers
+    GetUserInfoHandler,
+    GetAvailableOTPMethodsHandler,
+    ListActiveSessionsHandler,
+    GetSessionDetailsHandler,
+    CheckTOTPEnabledHandler,
 )
 
 __all__ = [
     # Base
     "CommandResponse",
+    "QueryResponse",
     # Commands
     "AuthenticateWithCredentials",
     "ValidateOTP",
@@ -44,14 +66,27 @@ __all__ = [
     "SetupTOTP",
     "ConfirmTOTPSetup",
     "DisableTOTP",
-    # Results
+    # Queries
+    "GetUserInfo",
+    "GetAvailableOTPMethods",
+    "ListActiveSessions",
+    "GetSessionDetails",
+    "CheckTOTPEnabled",
+    # Command Results
     "AuthStatus",
     "AuthResult",
     "TokenPair",
     "OTPChallengeResult",
     "TOTPSetupResult",
     "LogoutResult",
-    # Handlers
+    # Query Results
+    "UserInfoResult",
+    "AvailableOTPMethodsResult",
+    "OTPMethodInfo",
+    "ListSessionsResult",
+    "SessionInfo",
+    "TOTPStatusResult",
+    # Command Handlers
     "AuthenticateWithCredentialsHandler",
     "ValidateOTPHandler",
     "SendOTPChallengeHandler",
@@ -59,4 +94,11 @@ __all__ = [
     "LogoutHandler",
     "SetupTOTPHandler",
     "ConfirmTOTPSetupHandler",
+    # Query Handlers
+    "GetUserInfoHandler",
+    "GetAvailableOTPMethodsHandler",
+    "ListActiveSessionsHandler",
+    "GetSessionDetailsHandler",
+    "CheckTOTPEnabledHandler",
 ]
+

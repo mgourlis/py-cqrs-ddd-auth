@@ -4,10 +4,15 @@ Authentication result types.
 These represent the outcomes of authentication operations.
 """
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cqrs_ddd_auth.domain.value_objects import UserClaims
 
 
 class AuthStatus(str, Enum):
@@ -140,3 +145,109 @@ class LogoutResult:
     """Result of logout operation."""
     success: bool
     sessions_revoked: int = 1
+
+
+# ═══════════════════════════════════════════════════════════════
+# QUERY RESULTS
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass
+class UserInfoResult:
+    """
+    Result of GetUserInfo query.
+    
+    Contains the user's profile information decoded from
+    their access token or fetched from the IdP.
+    """
+    user_id: str
+    username: str
+    email: str
+    groups: list[str] = field(default_factory=list)
+    attributes: dict = field(default_factory=dict)
+    # Additional profile fields (optional)
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    tenant_id: Optional[str] = None
+    # 2FA status
+    totp_enabled: bool = False
+    
+    @classmethod
+    def from_claims(cls, claims: "UserClaims", totp_enabled: bool = False) -> "UserInfoResult":
+        """Create from UserClaims value object."""
+        return cls(
+            user_id=claims.sub,
+            username=claims.username,
+            email=claims.email,
+            groups=list(claims.groups) if claims.groups else [],
+            attributes=dict(claims.attributes) if claims.attributes else {},
+            tenant_id=claims.attributes.get("tenant_id") if claims.attributes else None,
+            totp_enabled=totp_enabled,
+        )
+
+
+@dataclass
+class OTPMethodInfo:
+    """Information about an available OTP method."""
+    method: str  # 'totp', 'email', 'sms'
+    enabled: bool  # Whether user has this method configured
+    destination: Optional[str] = None  # e.g., "j****@example.com" for email
+
+
+@dataclass
+class AvailableOTPMethodsResult:
+    """Result of GetAvailableOTPMethods query."""
+    methods: list[OTPMethodInfo] = field(default_factory=list)
+    requires_otp: bool = False  # Whether OTP is required for this user
+    
+    @property
+    def enabled_methods(self) -> list[str]:
+        """Get list of enabled method names."""
+        return [m.method for m in self.methods if m.enabled]
+    
+    @property
+    def available_methods(self) -> list[str]:
+        """Get list of all available method names."""
+        return [m.method for m in self.methods]
+
+
+@dataclass
+class SessionInfo:
+    """Information about an authentication session."""
+    session_id: str
+    status: str  # authenticated, pending_otp, expired, revoked
+    ip_address: str
+    user_agent: str
+    created_at: datetime
+    last_activity: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
+    is_current: bool = False  # True if this is the requesting session
+    otp_method: Optional[str] = None  # Which OTP method was used
+    
+    @property
+    def is_active(self) -> bool:
+        """Check if session is currently active."""
+        if self.status != "authenticated":
+            return False
+        if self.expires_at and datetime.now(timezone.utc) > self.expires_at:
+            return False
+        return True
+
+
+@dataclass
+class ListSessionsResult:
+    """Result of ListActiveSessions query."""
+    sessions: list[SessionInfo] = field(default_factory=list)
+    total_count: int = 0
+    
+    @property
+    def active_count(self) -> int:
+        """Count of currently active sessions."""
+        return sum(1 for s in self.sessions if s.is_active)
+
+
+@dataclass
+class TOTPStatusResult:
+    """Result of CheckTOTPEnabled query."""
+    enabled: bool
+    user_id: str
+    configured_at: Optional[datetime] = None
