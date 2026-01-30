@@ -12,13 +12,33 @@ from cqrs_ddd_auth.application.commands import (
     SetupTOTP,
     ConfirmTOTPSetup,
     DisableTOTP,
+    # User management commands
+    CreateUser,
+    UpdateUser,
+    DeleteUser,
+    SetUserPassword,
+    SendPasswordReset,
+    SendVerifyEmail,
+    AssignRoles,
+    RemoveRoles,
+    AddToGroups,
+    RemoveFromGroups,
 )
 from cqrs_ddd_auth.application.queries import (
+    # Auth queries
     GetUserInfo,
     GetAvailableOTPMethods,
     ListActiveSessions,
     GetSessionDetails,
     CheckTOTPEnabled,
+    # User management queries
+    GetUser,
+    GetUserByUsername,
+    GetUserByEmail,
+    ListUsers,
+    GetUserRoles,
+    GetUserGroups,
+    GetTypeLevelPermissions,
 )
 from cqrs_ddd_auth.application.results import (
     AuthStatus,
@@ -27,13 +47,32 @@ from cqrs_ddd_auth.application.results import (
     OTPChallengeResult,
     TOTPSetupResult,
     LogoutResult,
-    # Query results
+    # User management command results
+    CreateUserResult,
+    UpdateUserResult,
+    DeleteUserResult,
+    SetPasswordResult,
+    SendPasswordResetResult,
+    SendVerifyEmailResult,
+    AssignRolesResult,
+    RemoveRolesResult,
+    AddToGroupsResult,
+    RemoveFromGroupsResult,
+    # Auth query results
     UserInfoResult,
     AvailableOTPMethodsResult,
     OTPMethodInfo,
     ListSessionsResult,
     SessionInfo,
     TOTPStatusResult,
+    # User management query results
+    UserResult,
+    ListUsersResult,
+    RoleInfo,
+    UserRolesResult,
+    GroupInfo,
+    UserGroupsResult,
+    TypeLevelPermissionsResult,
 )
 from cqrs_ddd_auth.application.handlers import (
     # Command handlers
@@ -44,19 +83,38 @@ from cqrs_ddd_auth.application.handlers import (
     LogoutHandler,
     SetupTOTPHandler,
     ConfirmTOTPSetupHandler,
-    # Query handlers
+    # User management command handlers
+    CreateUserHandler,
+    UpdateUserHandler,
+    DeleteUserHandler,
+    SetUserPasswordHandler,
+    SendPasswordResetHandler,
+    SendVerifyEmailHandler,
+    AssignRolesHandler,
+    RemoveRolesHandler,
+    AddToGroupsHandler,
+    RemoveFromGroupsHandler,
+    # Auth query handlers
     GetUserInfoHandler,
     GetAvailableOTPMethodsHandler,
     ListActiveSessionsHandler,
     GetSessionDetailsHandler,
     CheckTOTPEnabledHandler,
+    # User management query handlers
+    GetUserHandler,
+    GetUserByUsernameHandler,
+    GetUserByEmailHandler,
+    ListUsersHandler,
+    GetUserRolesHandler,
+    GetUserGroupsHandler,
+    GetTypeLevelPermissionsHandler,
 )
 
 __all__ = [
     # Base
     "CommandResponse",
     "QueryResponse",
-    # Commands
+    # Auth Commands
     "AuthenticateWithCredentials",
     "ValidateOTP",
     "SendOTPChallenge",
@@ -66,27 +124,65 @@ __all__ = [
     "SetupTOTP",
     "ConfirmTOTPSetup",
     "DisableTOTP",
-    # Queries
+    # User Management Commands
+    "CreateUser",
+    "UpdateUser",
+    "DeleteUser",
+    "SetUserPassword",
+    "SendPasswordReset",
+    "SendVerifyEmail",
+    "AssignRoles",
+    "RemoveRoles",
+    "AddToGroups",
+    "RemoveFromGroups",
+    # Auth Queries
     "GetUserInfo",
     "GetAvailableOTPMethods",
     "ListActiveSessions",
     "GetSessionDetails",
     "CheckTOTPEnabled",
-    # Command Results
+    # User Management Queries
+    "GetUser",
+    "GetUserByUsername",
+    "GetUserByEmail",
+    "ListUsers",
+    "GetUserRoles",
+    "GetUserGroups",
+    "GetTypeLevelPermissions",
+    # Auth Command Results
     "AuthStatus",
     "AuthResult",
     "TokenPair",
     "OTPChallengeResult",
     "TOTPSetupResult",
     "LogoutResult",
-    # Query Results
+    # User Management Command Results
+    "CreateUserResult",
+    "UpdateUserResult",
+    "DeleteUserResult",
+    "SetPasswordResult",
+    "SendPasswordResetResult",
+    "SendVerifyEmailResult",
+    "AssignRolesResult",
+    "RemoveRolesResult",
+    "AddToGroupsResult",
+    "RemoveFromGroupsResult",
+    # Auth Query Results
     "UserInfoResult",
     "AvailableOTPMethodsResult",
     "OTPMethodInfo",
     "ListSessionsResult",
     "SessionInfo",
     "TOTPStatusResult",
-    # Command Handlers
+    # User Management Query Results
+    "UserResult",
+    "ListUsersResult",
+    "RoleInfo",
+    "UserRolesResult",
+    "GroupInfo",
+    "UserGroupsResult",
+    "TypeLevelPermissionsResult",
+    # Auth Command Handlers
     "AuthenticateWithCredentialsHandler",
     "ValidateOTPHandler",
     "SendOTPChallengeHandler",
@@ -94,11 +190,30 @@ __all__ = [
     "LogoutHandler",
     "SetupTOTPHandler",
     "ConfirmTOTPSetupHandler",
-    # Query Handlers
+    # User Management Command Handlers
+    "CreateUserHandler",
+    "UpdateUserHandler",
+    "DeleteUserHandler",
+    "SetUserPasswordHandler",
+    "SendPasswordResetHandler",
+    "SendVerifyEmailHandler",
+    "AssignRolesHandler",
+    "RemoveRolesHandler",
+    "AddToGroupsHandler",
+    "RemoveFromGroupsHandler",
+    # Auth Query Handlers
     "GetUserInfoHandler",
     "GetAvailableOTPMethodsHandler",
     "ListActiveSessionsHandler",
     "GetSessionDetailsHandler",
     "CheckTOTPEnabledHandler",
+    # User Management Query Handlers
+    "GetUserHandler",
+    "GetUserByUsernameHandler",
+    "GetUserByEmailHandler",
+    "ListUsersHandler",
+    "GetUserRolesHandler",
+    "GetUserGroupsHandler",
+    "GetTypeLevelPermissionsHandler",
 ]
 

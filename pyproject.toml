@@ -29,6 +29,8 @@ classifiers = [
 # Core dependencies
 dependencies = [
     "py-cqrs-ddd-toolkit @ git+ssh://git@github.com/mgourlis/py-cqrs-ddd-toolkit.git",
+    "stateful-abac-common @ git+ssh://git@github.com/mgourlis/stateful-abac-policy-engine.git@dev#subdirectory=common",
+    "stateful-abac-sdk[db] @ git+ssh://git@github.com/mgourlis/stateful-abac-policy-engine.git@dev#subdirectory=python-sdk",
     "pyotp>=2.9.0",  # TOTP/HOTP for 2FA
 ]
 
@@ -48,9 +50,6 @@ fastapi = [
 django = [
     "django>=4.2",
 ]
-abac = [
-    "stateful-abac-sdk>=0.1.0",
-]
 dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
@@ -59,7 +58,7 @@ dev = [
     "httpx>=0.25",
 ]
 all = [
-    "py-cqrs-ddd-auth[keycloak,fastapi,django,abac,dev,di]",
+    "py-cqrs-ddd-auth[keycloak,fastapi,django,dev,di]",
 ]
 
 [project.urls]

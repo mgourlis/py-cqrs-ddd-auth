@@ -7,6 +7,9 @@ from cqrs_ddd_auth.domain.value_objects import (
     Credentials,
     TOTPSecret,
     UserClaims,
+    # Role Unification
+    RoleSource,
+    AuthRole,
 )
 from cqrs_ddd_auth.domain.events import (
     AuthSessionCreated,
@@ -38,6 +41,9 @@ __all__ = [
     "Credentials",
     "TOTPSecret",
     "UserClaims",
+    # Role Unification
+    "RoleSource",
+    "AuthRole",
     # Events
     "AuthSessionCreated",
     "CredentialsValidated",

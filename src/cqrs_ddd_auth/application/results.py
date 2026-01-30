@@ -148,6 +148,84 @@ class LogoutResult:
 
 
 # ═══════════════════════════════════════════════════════════════
+# USER MANAGEMENT RESULTS
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass
+class CreateUserResult:
+    """Result of CreateUser command."""
+    user_id: str
+    username: str
+
+
+@dataclass
+class UpdateUserResult:
+    """Result of UpdateUser command."""
+    success: bool
+    user_id: str
+
+
+@dataclass
+class DeleteUserResult:
+    """Result of DeleteUser command."""
+    success: bool
+    user_id: str
+
+
+@dataclass
+class SetPasswordResult:
+    """Result of SetUserPassword command."""
+    success: bool
+    user_id: str
+
+
+@dataclass
+class SendPasswordResetResult:
+    """Result of SendPasswordReset command."""
+    success: bool
+    user_id: str
+
+
+@dataclass
+class SendVerifyEmailResult:
+    """Result of SendVerifyEmail command."""
+    success: bool
+    user_id: str
+
+
+@dataclass
+class AssignRolesResult:
+    """Result of AssignRoles command."""
+    success: bool
+    user_id: str
+    roles_assigned: list[str]
+
+
+@dataclass
+class RemoveRolesResult:
+    """Result of RemoveRoles command."""
+    success: bool
+    user_id: str
+    roles_removed: list[str]
+
+
+@dataclass
+class AddToGroupsResult:
+    """Result of AddToGroups command."""
+    success: bool
+    user_id: str
+    groups_added: list[str]
+
+
+@dataclass
+class RemoveFromGroupsResult:
+    """Result of RemoveFromGroups command."""
+    success: bool
+    user_id: str
+    groups_removed: list[str]
+
+
+# ═══════════════════════════════════════════════════════════════
 # QUERY RESULTS
 # ═══════════════════════════════════════════════════════════════
 
@@ -251,3 +329,117 @@ class TOTPStatusResult:
     enabled: bool
     user_id: str
     configured_at: Optional[datetime] = None
+
+
+# ═══════════════════════════════════════════════════════════════
+# USER MANAGEMENT QUERY RESULTS
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass
+class UserResult:
+    """
+    Result of GetUser, GetUserByUsername, GetUserByEmail queries.
+    
+    Contains full user profile from the identity provider.
+    """
+    user_id: str
+    username: str
+    email: str
+    first_name: str = ""
+    last_name: str = ""
+    enabled: bool = True
+    email_verified: bool = False
+    created_at: Optional[datetime] = None
+    attributes: dict = field(default_factory=dict)
+    
+    @property
+    def display_name(self) -> str:
+        """Get display name (full name or username)."""
+        if self.first_name or self.last_name:
+            return f"{self.first_name} {self.last_name}".strip()
+        return self.username
+
+
+@dataclass
+class ListUsersResult:
+    """Result of ListUsers query."""
+    users: list[UserResult] = field(default_factory=list)
+    total_count: int = 0
+    offset: int = 0
+    limit: int = 100
+    
+    @property
+    def has_more(self) -> bool:
+        """Check if there are more users beyond this page."""
+        return self.offset + len(self.users) < self.total_count
+
+
+@dataclass
+class RoleInfo:
+    """Information about a role."""
+    role_id: str
+    name: str
+    description: str = ""
+    is_composite: bool = False
+    source: str = "direct"  # "direct" or "group"
+
+
+@dataclass
+class UserRolesResult:
+    """Result of GetUserRoles query."""
+    user_id: str
+    roles: list[RoleInfo] = field(default_factory=list)
+    
+    @property
+    def role_names(self) -> list[str]:
+        """Get list of role names."""
+        return [r.name for r in self.roles]
+    
+    @property
+    def direct_roles(self) -> list[RoleInfo]:
+        """Get directly assigned roles."""
+        return [r for r in self.roles if r.source == "direct"]
+    
+    @property
+    def group_roles(self) -> list[RoleInfo]:
+        """Get roles inherited from groups."""
+        return [r for r in self.roles if r.source == "group"]
+
+
+@dataclass
+class GroupInfo:
+    """Information about a group."""
+    group_id: str
+    name: str
+    path: Optional[str] = None  # Path format is IdP-specific, may not be available
+
+
+@dataclass
+class UserGroupsResult:
+    """Result of GetUserGroups query."""
+    user_id: str
+    groups: list[GroupInfo] = field(default_factory=list)
+    
+    @property
+    def group_paths(self) -> list[str]:
+        """Get list of group paths (only for groups that have paths)."""
+        return [g.path for g in self.groups if g.path is not None]
+
+
+@dataclass
+class TypeLevelPermissionsResult:
+    """
+    Result of GetTypeLevelPermissions query.
+    
+    Maps resource types to their permitted actions for the user.
+    """
+    permissions: dict[str, list[str]] = field(default_factory=dict)
+    
+    def can_perform(self, resource_type: str, action: str) -> bool:
+        """Check if user can perform action on resource type."""
+        return action in self.permissions.get(resource_type, [])
+    
+    def get_actions(self, resource_type: str) -> list[str]:
+        """Get permitted actions for a resource type."""
+        return self.permissions.get(resource_type, [])
+

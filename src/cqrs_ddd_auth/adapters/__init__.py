@@ -52,6 +52,13 @@ try:
         KeycloakConfig,
         AuthenticationError,
         InvalidTokenError,
+        GroupPathStrategy,  # Keycloak-specific group handling
+    )
+    from cqrs_ddd_auth.adapters.keycloak_admin import (
+        KeycloakAdminAdapter,
+        KeycloakAdminConfig,
+        UserManagementError,
+        UserNotFoundError,
     )
     HAS_KEYCLOAK = True
     __all__.extend([
@@ -59,6 +66,25 @@ try:
         "KeycloakConfig",
         "AuthenticationError",
         "InvalidTokenError",
+        "GroupPathStrategy",
+        "KeycloakAdminAdapter",
+        "KeycloakAdminConfig",
+        "UserManagementError",
+        "UserNotFoundError",
     ])
 except ImportError:
     HAS_KEYCLOAK = False
+
+# ABAC Adapter (optional - requires stateful-abac-sdk)
+try:
+    from cqrs_ddd_auth.adapters.abac import (
+        StatefulABACAdapter,
+        ABACClientConfig,
+    )
+    HAS_ABAC = True
+    __all__.extend([
+        "StatefulABACAdapter",
+        "ABACClientConfig",
+    ])
+except ImportError:
+    HAS_ABAC = False

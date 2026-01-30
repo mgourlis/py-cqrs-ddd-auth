@@ -593,6 +593,319 @@ class ConfirmTOTPSetupHandler(CommandHandler[bool]):
 
 
 # ═══════════════════════════════════════════════════════════════
+# USER MANAGEMENT COMMAND HANDLERS
+# ═══════════════════════════════════════════════════════════════
+
+from cqrs_ddd_auth.application.commands import (
+    CreateUser,
+    UpdateUser,
+    DeleteUser,
+    SetUserPassword,
+    SendPasswordReset,
+    SendVerifyEmail,
+    AssignRoles,
+    RemoveRoles,
+    AddToGroups,
+    RemoveFromGroups,
+)
+from cqrs_ddd_auth.application.results import (
+    CreateUserResult,
+    UpdateUserResult,
+    DeleteUserResult,
+    SetPasswordResult,
+    SendPasswordResetResult,
+    SendVerifyEmailResult,
+    AssignRolesResult,
+    RemoveRolesResult,
+    AddToGroupsResult,
+    RemoveFromGroupsResult,
+)
+from cqrs_ddd_auth.ports.identity_provider_admin import (
+    IdentityProviderAdminPort as UserMgmtPort,
+    CreateUserData,
+    UpdateUserData,
+)
+
+
+class CreateUserHandler(CommandHandler[CreateUserResult]):
+    """
+    Handle CreateUser command.
+    
+    Creates a new user in the identity provider.
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: CreateUser) -> CommandResponse[CreateUserResult]:
+        user_data = CreateUserData(
+            username=command.username,
+            email=command.email,
+            first_name=command.first_name,
+            last_name=command.last_name,
+            enabled=command.enabled,
+            email_verified=command.email_verified,
+            attributes=command.attributes or {},
+            temporary_password=command.temporary_password,
+        )
+        
+        user_id = await self.idp_admin.create_user(user_data)
+        
+        return CommandResponse(
+            result=CreateUserResult(
+                user_id=user_id,
+                username=command.username,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+class UpdateUserHandler(CommandHandler[UpdateUserResult]):
+    """
+    Handle UpdateUser command.
+    
+    Updates an existing user's attributes.
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: UpdateUser) -> CommandResponse[UpdateUserResult]:
+        updates = UpdateUserData(
+            email=command.email,
+            first_name=command.first_name,
+            last_name=command.last_name,
+            enabled=command.enabled,
+            email_verified=command.email_verified,
+            attributes=command.attributes,
+        )
+        
+        await self.idp_admin.update_user(command.user_id, updates)
+        
+        return CommandResponse(
+            result=UpdateUserResult(
+                success=True,
+                user_id=command.user_id,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+class DeleteUserHandler(CommandHandler[DeleteUserResult]):
+    """
+    Handle DeleteUser command.
+    
+    Deletes a user from the identity provider.
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: DeleteUser) -> CommandResponse[DeleteUserResult]:
+        await self.idp_admin.delete_user(command.user_id)
+        
+        return CommandResponse(
+            result=DeleteUserResult(
+                success=True,
+                user_id=command.user_id,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+class SetUserPasswordHandler(CommandHandler[SetPasswordResult]):
+    """
+    Handle SetUserPassword command.
+    
+    Sets a user's password directly (admin action).
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: SetUserPassword) -> CommandResponse[SetPasswordResult]:
+        await self.idp_admin.set_password(
+            command.user_id,
+            command.password,
+            command.temporary,
+        )
+        
+        return CommandResponse(
+            result=SetPasswordResult(
+                success=True,
+                user_id=command.user_id,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+class SendPasswordResetHandler(CommandHandler[SendPasswordResetResult]):
+    """
+    Handle SendPasswordReset command.
+    
+    Triggers password reset email via the IdP.
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: SendPasswordReset) -> CommandResponse[SendPasswordResetResult]:
+        await self.idp_admin.send_password_reset(command.user_id)
+        
+        return CommandResponse(
+            result=SendPasswordResetResult(
+                success=True,
+                user_id=command.user_id,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+class SendVerifyEmailHandler(CommandHandler[SendVerifyEmailResult]):
+    """
+    Handle SendVerifyEmail command.
+    
+    Sends email verification via the IdP.
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: SendVerifyEmail) -> CommandResponse[SendVerifyEmailResult]:
+        await self.idp_admin.send_verify_email(command.user_id)
+        
+        return CommandResponse(
+            result=SendVerifyEmailResult(
+                success=True,
+                user_id=command.user_id,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+class AssignRolesHandler(CommandHandler[AssignRolesResult]):
+    """
+    Handle AssignRoles command.
+    
+    Assigns roles to a user.
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: AssignRoles) -> CommandResponse[AssignRolesResult]:
+        await self.idp_admin.assign_roles(command.user_id, command.role_names)
+        
+        return CommandResponse(
+            result=AssignRolesResult(
+                success=True,
+                user_id=command.user_id,
+                roles_assigned=command.role_names,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+class RemoveRolesHandler(CommandHandler[RemoveRolesResult]):
+    """
+    Handle RemoveRoles command.
+    
+    Removes roles from a user.
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: RemoveRoles) -> CommandResponse[RemoveRolesResult]:
+        await self.idp_admin.remove_roles(command.user_id, command.role_names)
+        
+        return CommandResponse(
+            result=RemoveRolesResult(
+                success=True,
+                user_id=command.user_id,
+                roles_removed=command.role_names,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+class AddToGroupsHandler(CommandHandler[AddToGroupsResult]):
+    """
+    Handle AddToGroups command.
+    
+    Adds a user to groups.
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: AddToGroups) -> CommandResponse[AddToGroupsResult]:
+        await self.idp_admin.add_to_groups(command.user_id, command.group_ids)
+        
+        return CommandResponse(
+            result=AddToGroupsResult(
+                success=True,
+                user_id=command.user_id,
+                groups_added=command.group_ids,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+class RemoveFromGroupsHandler(CommandHandler[RemoveFromGroupsResult]):
+    """
+    Handle RemoveFromGroups command.
+    
+    Removes a user from groups.
+    """
+    
+    def __init__(self, idp_admin: UserMgmtPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, command: RemoveFromGroups) -> CommandResponse[RemoveFromGroupsResult]:
+        await self.idp_admin.remove_from_groups(command.user_id, command.group_ids)
+        
+        return CommandResponse(
+            result=RemoveFromGroupsResult(
+                success=True,
+                user_id=command.user_id,
+                groups_removed=command.group_ids,
+            ),
+            events=[],
+            correlation_id=command.correlation_id,
+            causation_id=command.command_id,
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
 # QUERY HANDLERS
 # ═══════════════════════════════════════════════════════════════
 
@@ -821,4 +1134,300 @@ class CheckTOTPEnabledHandler(QueryHandler[TOTPStatusResult]):
                 # configured_at would require storing metadata with the secret
             )
         )
+
+
+# ═══════════════════════════════════════════════════════════════
+# USER MANAGEMENT QUERY HANDLERS
+# ═══════════════════════════════════════════════════════════════
+
+from cqrs_ddd_auth.application.queries import (
+    GetUser,
+    GetUserByUsername,
+    GetUserByEmail,
+    ListUsers,
+    GetUserRoles,
+    GetUserGroups,
+    GetTypeLevelPermissions,
+)
+from cqrs_ddd_auth.application.results import (
+    UserResult,
+    ListUsersResult,
+    RoleInfo,
+    UserRolesResult,
+    GroupInfo,
+    UserGroupsResult,
+    TypeLevelPermissionsResult,
+)
+from cqrs_ddd_auth.ports.identity_provider_admin import (
+    IdentityProviderAdminPort,
+    GroupRolesCapability,
+    UserFilters,
+)
+from cqrs_ddd_auth.ports.authorization import ABACAuthorizationPort
+
+
+class GetUserHandler(QueryHandler[UserResult]):
+    """
+    Handle GetUser query.
+    
+    Returns user profile from the identity provider by ID.
+    """
+    
+    def __init__(self, idp_admin: IdentityProviderAdminPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, query: GetUser) -> QueryResponse[UserResult]:
+        user_data = await self.idp_admin.get_user(query.user_id)
+        
+        if not user_data:
+            raise ValueError(f"User not found: {query.user_id}")
+        
+        result = UserResult(
+            user_id=user_data.user_id,
+            username=user_data.username,
+            email=user_data.email,
+            first_name=user_data.first_name,
+            last_name=user_data.last_name,
+            enabled=user_data.enabled,
+            email_verified=user_data.email_verified,
+            attributes=user_data.attributes,
+        )
+        
+        return QueryResponse(result=result)
+
+
+class GetUserByUsernameHandler(QueryHandler[UserResult]):
+    """
+    Handle GetUserByUsername query.
+    
+    Returns user profile from the identity provider by username.
+    """
+    
+    def __init__(self, idp_admin: IdentityProviderAdminPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, query: GetUserByUsername) -> QueryResponse[UserResult]:
+        user_data = await self.idp_admin.get_user_by_username(query.username)
+        
+        if not user_data:
+            raise ValueError(f"User not found: {query.username}")
+        
+        result = UserResult(
+            user_id=user_data.user_id,
+            username=user_data.username,
+            email=user_data.email,
+            first_name=user_data.first_name,
+            last_name=user_data.last_name,
+            enabled=user_data.enabled,
+            email_verified=user_data.email_verified,
+            attributes=user_data.attributes,
+        )
+        
+        return QueryResponse(result=result)
+
+
+class GetUserByEmailHandler(QueryHandler[UserResult]):
+    """
+    Handle GetUserByEmail query.
+    
+    Returns user profile from the identity provider by email.
+    """
+    
+    def __init__(self, idp_admin: IdentityProviderAdminPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, query: GetUserByEmail) -> QueryResponse[UserResult]:
+        user_data = await self.idp_admin.get_user_by_email(query.email)
+        
+        if not user_data:
+            raise ValueError(f"User not found: {query.email}")
+        
+        result = UserResult(
+            user_id=user_data.user_id,
+            username=user_data.username,
+            email=user_data.email,
+            first_name=user_data.first_name,
+            last_name=user_data.last_name,
+            enabled=user_data.enabled,
+            email_verified=user_data.email_verified,
+            attributes=user_data.attributes,
+        )
+        
+        return QueryResponse(result=result)
+
+
+class ListUsersHandler(QueryHandler[ListUsersResult]):
+    """
+    Handle ListUsers query.
+    
+    Returns paginated list of users from the identity provider.
+    """
+    
+    def __init__(self, idp_admin: IdentityProviderAdminPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, query: ListUsers) -> QueryResponse[ListUsersResult]:
+        filters = UserFilters(
+            search=query.search,
+            role=query.role,
+            group=query.group,
+            enabled=query.enabled,
+            offset=query.offset,
+            limit=query.limit,
+        )
+        
+        users_data = await self.idp_admin.list_users(filters)
+        total_count = await self.idp_admin.count_users(filters)
+        
+        users = [
+            UserResult(
+                user_id=u.user_id,
+                username=u.username,
+                email=u.email,
+                first_name=u.first_name,
+                last_name=u.last_name,
+                enabled=u.enabled,
+                email_verified=u.email_verified,
+                attributes=u.attributes,
+            )
+            for u in users_data
+        ]
+        
+        return QueryResponse(
+            result=ListUsersResult(
+                users=users,
+                total_count=total_count,
+                offset=query.offset,
+                limit=query.limit,
+            )
+        )
+
+
+class GetUserRolesHandler(QueryHandler[UserRolesResult]):
+    """
+    Handle GetUserRoles query.
+    
+    Returns all roles assigned to a user, including roles
+    inherited from group membership when include_group_roles=True.
+    """
+    
+    def __init__(self, idp_admin: IdentityProviderAdminPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, query: GetUserRoles) -> QueryResponse[UserRolesResult]:
+        # Get directly assigned roles
+        roles_data = await self.idp_admin.get_user_roles(query.user_id)
+        
+        roles = [
+            RoleInfo(
+                role_id=r.role_id,
+                name=r.name,
+                description=r.description,
+                is_composite=r.is_composite,
+                source="direct",
+            )
+            for r in roles_data
+        ]
+        
+        # Track role names to avoid duplicates
+        seen_role_names = {r.name for r in roles}
+        
+        # Fetch group-derived roles if requested AND if the IdP supports it
+        if query.include_group_roles:
+            user_groups = await self.idp_admin.get_user_groups(query.user_id)
+            
+            # Check if the IdP adapter supports group roles (e.g., Keycloak)
+            if isinstance(self.idp_admin, GroupRolesCapability):
+                for group in user_groups:
+                    group_roles = await self.idp_admin.get_group_roles(group.group_id)
+                    
+                    for r in group_roles:
+                        # Skip if already have this role (direct assignment takes precedence)
+                        if r.name in seen_role_names:
+                            continue
+                        
+                        seen_role_names.add(r.name)
+                        roles.append(
+                            RoleInfo(
+                                role_id=r.role_id,
+                                name=r.name,
+                                description=r.description,
+                                is_composite=r.is_composite,
+                                source=f"group:{group.name}",  # Track which group provided the role
+                            )
+                        )
+        
+        return QueryResponse(
+            result=UserRolesResult(
+                user_id=query.user_id,
+                roles=roles,
+            )
+        )
+
+
+class GetUserGroupsHandler(QueryHandler[UserGroupsResult]):
+    """
+    Handle GetUserGroups query.
+    
+    Returns all groups a user belongs to.
+    """
+    
+    def __init__(self, idp_admin: IdentityProviderAdminPort):
+        super().__init__()
+        self.idp_admin = idp_admin
+    
+    async def handle(self, query: GetUserGroups) -> QueryResponse[UserGroupsResult]:
+        groups_data = await self.idp_admin.get_user_groups(query.user_id)
+        
+        groups = [
+            GroupInfo(
+                group_id=g.group_id,
+                name=g.name,
+                path=g.path,
+            )
+            for g in groups_data
+        ]
+        
+        return QueryResponse(
+            result=UserGroupsResult(
+                user_id=query.user_id,
+                groups=groups,
+            )
+        )
+
+
+class GetTypeLevelPermissionsHandler(QueryHandler[TypeLevelPermissionsResult]):
+    """
+    Handle GetTypeLevelPermissions query.
+    
+    Returns type-level permissions from the ABAC engine.
+    Used for UI rendering to show/hide buttons, menu items, etc.
+    """
+    
+    def __init__(self, abac: ABACAuthorizationPort):
+        super().__init__()
+        self.abac = abac
+    
+    async def handle(self, query: GetTypeLevelPermissions) -> QueryResponse[TypeLevelPermissionsResult]:
+        resource_types = query.resource_types
+        
+        # If no types specified, get all available types
+        if not resource_types:
+            resource_types = await self.abac.list_resource_types()
+        
+        # Fetch type-level permissions from ABAC
+        permissions = await self.abac.get_type_level_permissions(
+            access_token=query.access_token,
+            resource_types=resource_types,
+        )
+        
+        return QueryResponse(
+            result=TypeLevelPermissionsResult(permissions=permissions)
+        )
+
 

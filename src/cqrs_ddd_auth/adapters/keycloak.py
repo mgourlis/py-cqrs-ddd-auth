@@ -6,13 +6,43 @@ Uses python-keycloak and python-jose for robust JWT handling.
 """
 
 from dataclasses import dataclass, field
-from typing import Optional, Dict, Any
+from enum import Enum
+from typing import Optional, Dict, Any, List
 
 from keycloak import KeycloakOpenID
 from jose import jwt, JWTError
 
 from cqrs_ddd_auth.ports.identity_provider import IdentityProviderPort, TokenResponse
-from cqrs_ddd_auth.domain.value_objects import UserClaims
+from cqrs_ddd_auth.domain.value_objects import (
+    UserClaims,
+    AuthRole,
+    RoleSource,
+)
+
+
+# ═══════════════════════════════════════════════════════════════
+# KEYCLOAK-SPECIFIC ENUMS
+# ═══════════════════════════════════════════════════════════════
+
+class GroupPathStrategy(Enum):
+    """
+    How to convert Keycloak group paths to role names.
+    
+    Example group path: /web/admin/editor
+    
+    Strategies:
+    - FULL_PATH:    → "web/admin/editor" (default, preserves hierarchy)
+    - LAST_SEGMENT: → "editor" (simple, loses context)
+    - ALL_SEGMENTS: → ["web", "admin", "editor"] (flexible, adds multiple roles)
+    """
+    FULL_PATH = "full_path"
+    LAST_SEGMENT = "last_segment"
+    ALL_SEGMENTS = "all_segments"
+
+
+# ═══════════════════════════════════════════════════════════════
+# EXCEPTIONS
+# ═══════════════════════════════════════════════════════════════
 
 
 class AuthenticationError(Exception):
@@ -44,6 +74,11 @@ class KeycloakConfig:
     
     # Token validation
     verify: bool = True
+    
+    # ═══════ GROUP HANDLING (Role Unification) ═══════
+    merge_groups_as_roles: bool = True  # Groups become authorization roles
+    group_path_strategy: GroupPathStrategy = GroupPathStrategy.FULL_PATH  # Default: preserve hierarchy
+    group_prefix: str = ""  # Optional prefix for group-derived roles
 
 
 class KeycloakAdapter:
@@ -217,25 +252,94 @@ class KeycloakAdapter:
         """
         Convert JWT payload to normalized UserClaims.
         
-        This handles Keycloak-specific claim names and structures.
+        This handles Keycloak-specific claim names, structures, and
+        role unification (groups as roles).
         """
-        groups = self._extract_groups(payload)
-        username = payload.get(self.config.username_claim, "")
-        email = payload.get(self.config.email_claim, "")
+        roles: List[AuthRole] = []
         
-        # Collect additional attributes
-        attributes = {}
-        for key in ["tenant_id", "org_id", "department"]:
-            if key in payload:
-                attributes[key] = payload[key]
+        # 1. Realm roles from realm_access
+        realm_access = payload.get("realm_access", {})
+        for role_name in realm_access.get("roles", []):
+            roles.append(AuthRole(name=role_name, source=RoleSource.IDP_ROLE))
+        
+        # 2. Client roles from resource_access
+        resource_access = payload.get("resource_access", {})
+        for client, client_data in resource_access.items():
+            for role_name in client_data.get("roles", []):
+                # Include client prefix in name if not our client
+                if client == self.config.client_id:
+                    prefixed_name = role_name
+                else:
+                    prefixed_name = f"{client}:{role_name}"
+                roles.append(AuthRole(
+                    name=prefixed_name,
+                    source=RoleSource.IDP_CLIENT_ROLE,
+                    attributes={"client": client}
+                ))
+        
+        # 3. Groups - both as raw groups and optionally as roles
+        raw_groups = tuple(payload.get("groups", []))
+        
+        if self.config.merge_groups_as_roles:
+            for group_path in raw_groups:
+                group_roles = self._group_path_to_roles(
+                    group_path,
+                    strategy=self.config.group_path_strategy,
+                    prefix=self.config.group_prefix
+                )
+                roles.extend(group_roles)
         
         return UserClaims(
             sub=payload.get("sub", ""),
-            username=username,
-            email=email,
-            groups=tuple(groups),
-            attributes=attributes,
+            username=payload.get("preferred_username", payload.get("sub", "")),
+            email=payload.get("email", ""),
+            groups=raw_groups,
+            roles=tuple(roles),
+            attributes=payload
         )
+    
+    def _group_path_to_roles(
+        self,
+        group_path: str,
+        strategy: GroupPathStrategy,
+        prefix: str = ""
+    ) -> List[AuthRole]:
+        """
+        Convert Keycloak group path to one or more roles.
+        
+        Args:
+            group_path: Full group path, e.g., "/web/admin/editor"
+            strategy: How to handle the path
+            prefix: Optional prefix for role names
+        
+        Returns:
+            List of AuthRole objects (usually 1, but may be multiple for ALL_SEGMENTS)
+        """
+        path = group_path.strip("/")
+        segments = path.split("/") if path else []
+        
+        if not segments:
+            return []
+        
+        roles: List[AuthRole] = []
+        
+        if strategy == GroupPathStrategy.FULL_PATH:
+            # /web/admin/editor → "web/admin/editor"
+            name = f"{prefix}{path}" if prefix else path
+            roles.append(AuthRole(name=name, source=RoleSource.DERIVED))
+        
+        elif strategy == GroupPathStrategy.LAST_SEGMENT:
+            # /web/admin/editor → "editor"
+            name = f"{prefix}{segments[-1]}" if prefix else segments[-1]
+            roles.append(AuthRole(name=name, source=RoleSource.DERIVED))
+        
+        elif strategy == GroupPathStrategy.ALL_SEGMENTS:
+            # /web/admin/editor → ["web", "admin", "editor"]
+            for segment in segments:
+                name = f"{prefix}{segment}" if prefix else segment
+                roles.append(AuthRole(name=name, source=RoleSource.DERIVED))
+        
+        return roles
     
     def _extract_groups(self, payload: Dict[str, Any]) -> list[str]:
         """

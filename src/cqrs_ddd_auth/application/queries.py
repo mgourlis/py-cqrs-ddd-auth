@@ -83,3 +83,94 @@ class CheckTOTPEnabled(Query):
     two-factor authentication.
     """
     user_id: str
+
+
+# ═══════════════════════════════════════════════════════════════
+# USER MANAGEMENT QUERIES (Section 10.2)
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass(kw_only=True)
+class GetUser(Query):
+    """
+    Get user by ID from the identity provider.
+    
+    Returns full user profile including attributes,
+    enabled status, and email verification status.
+    """
+    user_id: str
+
+
+@dataclass(kw_only=True)
+class GetUserByUsername(Query):
+    """
+    Get user by username from the identity provider.
+    
+    Useful for looking up users when you only have their username.
+    """
+    username: str
+
+
+@dataclass(kw_only=True)
+class GetUserByEmail(Query):
+    """
+    Get user by email from the identity provider.
+    
+    Useful for looking up users when you only have their email.
+    """
+    email: str
+
+
+@dataclass(kw_only=True)
+class ListUsers(Query):
+    """
+    List users with optional filters.
+    
+    Used for admin interfaces to browse and search users.
+    Supports pagination for large user bases.
+    """
+    search: Optional[str] = None   # Search in username, email, name
+    role: Optional[str] = None     # Filter by role
+    group: Optional[str] = None    # Filter by group
+    enabled: Optional[bool] = None # Filter by enabled status
+    offset: int = 0
+    limit: int = 100
+
+
+@dataclass(kw_only=True)
+class GetUserRoles(Query):
+    """
+    Get all roles assigned to a user.
+    
+    Returns both directly assigned roles and roles
+    inherited from group membership.
+    """
+    user_id: str
+    include_group_roles: bool = True  # Include roles from group membership
+
+
+@dataclass(kw_only=True)
+class GetUserGroups(Query):
+    """
+    Get all groups a user belongs to.
+    
+    Returns hierarchical group information including
+    the full path for each group.
+    """
+    user_id: str
+
+
+# ═══════════════════════════════════════════════════════════════
+# PERMISSION QUERIES
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass(kw_only=True)
+class GetTypeLevelPermissions(Query):
+    """
+    Get type-level permissions for the current user.
+    
+    Returns what actions the user can perform on each resource type.
+    Used for UI rendering (showing/hiding buttons, menu items, etc.).
+    """
+    access_token: str
+    resource_types: Optional[list[str]] = None  # None = all types
+

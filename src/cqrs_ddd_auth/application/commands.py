@@ -135,3 +135,111 @@ class DisableTOTP(Command):
     """
     user_id: str
     verification_code: str  # Require current TOTP code to disable
+
+
+# ═══════════════════════════════════════════════════════════════
+# USER MANAGEMENT COMMANDS
+# ═══════════════════════════════════════════════════════════════
+
+@dataclass(kw_only=True)
+class CreateUser(Command):
+    """
+    Create a new user in the identity provider.
+    
+    Returns the created user's ID.
+    """
+    username: str
+    email: str
+    first_name: str = ""
+    last_name: str = ""
+    enabled: bool = True
+    email_verified: bool = False
+    attributes: Optional[dict] = None
+    # Optional: set password on creation
+    temporary_password: Optional[str] = None
+
+
+@dataclass(kw_only=True)
+class UpdateUser(Command):
+    """
+    Update an existing user's attributes.
+    
+    Only non-None fields will be updated.
+    """
+    user_id: str
+    email: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    enabled: Optional[bool] = None
+    email_verified: Optional[bool] = None
+    attributes: Optional[dict] = None
+
+
+@dataclass(kw_only=True)
+class DeleteUser(Command):
+    """
+    Delete a user from the identity provider.
+    """
+    user_id: str
+
+
+@dataclass(kw_only=True)
+class SetUserPassword(Command):
+    """
+    Set a user's password.
+    """
+    user_id: str
+    password: str
+    temporary: bool = False  # If True, user must change on next login
+
+
+@dataclass(kw_only=True)
+class SendPasswordReset(Command):
+    """
+    Trigger password reset email for a user.
+    """
+    user_id: str
+
+
+@dataclass(kw_only=True)
+class SendVerifyEmail(Command):
+    """
+    Send email verification email to a user.
+    """
+    user_id: str
+
+
+@dataclass(kw_only=True)
+class AssignRoles(Command):
+    """
+    Assign roles to a user.
+    """
+    user_id: str
+    role_names: List[str]
+
+
+@dataclass(kw_only=True)
+class RemoveRoles(Command):
+    """
+    Remove roles from a user.
+    """
+    user_id: str
+    role_names: List[str]
+
+
+@dataclass(kw_only=True)
+class AddToGroups(Command):
+    """
+    Add a user to groups.
+    """
+    user_id: str
+    group_ids: List[str]
+
+
+@dataclass(kw_only=True)
+class RemoveFromGroups(Command):
+    """
+    Remove a user from groups.
+    """
+    user_id: str
+    group_ids: List[str]
