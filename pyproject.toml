@@ -28,7 +28,7 @@ classifiers = [
 
 # Core dependencies
 dependencies = [
-    "py-cqrs-ddd-toolkit>=0.1.0",
+    "py-cqrs-ddd-toolkit @ git+ssh://git@github.com/mgourlis/py-cqrs-ddd-toolkit.git",
     "pyotp>=2.9.0",  # TOTP/HOTP for 2FA
 ]
 
@@ -63,6 +63,9 @@ all = [
 Homepage = "https://github.com/mgourlis/py-cqrs-ddd-auth"
 Documentation = "https://github.com/mgourlis/py-cqrs-ddd-auth#readme"
 Repository = "https://github.com/mgourlis/py-cqrs-ddd-auth"
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cqrs_ddd_auth"]

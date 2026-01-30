@@ -22,6 +22,97 @@ A **toolkit-native** authentication and authorization library built using CQRS, 
 
 ## 2. Core Principles
 
+### 2.0 Dual-Mode Authentication
+
+The library supports two authentication modes to accommodate different application patterns:
+
+#### Stateless Mode (Default)
+
+**Best for:** APIs, SPAs, mobile apps where the client naturally retries with credentials.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ STATELESS FLOW                                                       │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Request 1: POST /login {username, password}                        │
+│      ↓                                                               │
+│  Validate credentials with IdP                                       │
+│      ↓                                                               │
+│  OTP required? ──No──→ Return tokens ✓                              │
+│      │Yes                                                            │
+│      ↓                                                               │
+│  Return 401 {otp_required: true, methods: ["totp", "email"]}        │
+│                                                                      │
+│  Request 2: POST /login {username, password, otp_method, otp_code}  │
+│      ↓                                                               │
+│  Validate credentials with IdP (again)                               │
+│      ↓                                                               │
+│  Validate OTP inline                                                 │
+│      ↓                                                               │
+│  Return tokens ✓                                                     │
+│                                                                      │
+│  No server-side session storage required!                            │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Advantages:**
+- No session storage infrastructure needed
+- Horizontally scalable without shared state
+- Simple client implementation (retry with same credentials + OTP)
+
+**Security:** IdP (Keycloak) handles rate limiting and brute-force protection. OTP services track attempts internally.
+
+#### Stateful Mode (Session Tracking)
+
+**Best for:** Complex multi-step flows, audit requirements, "sign out all devices" functionality.
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│ STATEFUL FLOW (track_session=True)                                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  Request 1: POST /login {username, password, track_session: true}   │
+│      ↓                                                               │
+│  Create AuthSession aggregate                                        │
+│      ↓                                                               │
+│  Validate credentials with IdP                                       │
+│      ↓                                                               │
+│  OTP required? ──No──→ Return {session_id, tokens} ✓                │
+│      │Yes                                                            │
+│      ↓                                                               │
+│  Store pending session                                               │
+│      ↓                                                               │
+│  Return 401 {session_id, otp_required: true}                        │
+│                                                                      │
+│  Request 2: POST /validate-otp {session_id, otp_code}               │
+│      ↓                                                               │
+│  Load session from repository                                        │
+│      ↓                                                               │
+│  Validate OTP                                                        │
+│      ↓                                                               │
+│  Update session → AUTHENTICATED                                      │
+│      ↓                                                               │
+│  Return {session_id, tokens} ✓                                       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**Advantages:**
+- Full event sourcing for audit trails
+- Session-level operations (revoke all, list active sessions)
+- Rate limiting tied to session, not IP
+
+#### Choosing a Mode
+
+| Use Case | Mode | Rationale |
+|----------|------|-----------|
+| REST API with JWT | Stateless | No session state needed |
+| Mobile app | Stateless | Client naturally retries |
+| SPA with OAuth | Stateless | Frontend handles flow |
+| Enterprise with audit requirements | Stateful | Event sourcing for compliance |
+| "Sign out of all devices" feature | Stateful | Need session tracking |
+| Step-up authentication | Stateful | Already logged in, need OTP for action |
+
 ### 2.1 Identity as a Protocol, Not an Entity
 The toolkit defines `Identity` as a **Protocol**—a contract that the host application fulfills. The domain layer never knows *how* the identity was resolved.
 
@@ -334,35 +425,78 @@ from cqrs_ddd.middleware import middleware
 # COMMANDS
 # ═══════════════════════════════════════════════════════════════
 
-@dataclass
+@dataclass(kw_only=True)
 class AuthenticateWithCredentials(Command):
     """
     Initiate authentication with username/password.
     
-    Note: Token delivery format (header vs cookie) is determined by the
-    framework adapter based on TokenSource, not by this command.
+    Supports dual mode (see Section 2.0):
+    
+    STATELESS MODE (track_session=False, default):
+        - No server-side session needed
+        - If OTP required, returns otp_required status
+        - Client retries with same credentials + otp_method + otp_code
+    
+    STATEFUL MODE (track_session=True):
+        - Creates AuthSession for tracking
+        - Returns session_id with otp_required
+        - Client uses ValidateOTP command with session_id
+    
+    Token delivery (header vs cookie) is determined by the framework adapter.
     """
     username: str
     password: str
-    otp_method: Optional[str] = None
+    
+    # Mode selection
+    track_session: bool = False  # Enable stateful mode with session tracking
+    ip_address: str = ""         # Required if track_session=True
+    user_agent: str = ""         # Required if track_session=True
+    
+    # Inline OTP (stateless mode - client sends everything in one request on retry)
+    otp_method: Optional[str] = None  # "totp", "email", "sms"
     otp_code: Optional[str] = None
-    required_roles: Optional[list[str]] = None  # User must have ALL of these (if specified)
+    
+    # Authorization checks
+    required_groups: Optional[List[str]] = None  # User must be in at least one
 
-@dataclass
+@dataclass(kw_only=True)
 class ValidateOTP(Command):
-    """Validate OTP for pending session."""
+    """
+    Validate OTP for pending session (stateful mode only).
+    
+    Used when track_session=True was specified and OTP is required.
+    """
     session_id: str
-    otp_code: str
+    code: str
+    method: str = "totp"
 
-@dataclass
+@dataclass(kw_only=True)
+class SendOTPChallenge(Command):
+    """
+    Request OTP challenge to be sent (email/SMS).
+    
+    Works in both modes:
+    - Stateful: Uses session_id
+    - Stateless: Uses access_token to identify user
+    """
+    session_id: Optional[str] = None
+    access_token: Optional[str] = None
+    method: str = ""  # "email" or "sms"
+
+@dataclass(kw_only=True)
 class RefreshTokens(Command):
     """Refresh expired access token."""
     refresh_token: str
 
-@dataclass
+@dataclass(kw_only=True)
 class Logout(Command):
-    """Terminate user session."""
-    refresh_token: Optional[str] = None
+    """
+    Terminate user session and revoke tokens.
+    
+    session_id is optional - only needed for stateful mode.
+    """
+    refresh_token: str
+    session_id: Optional[str] = None
 
 # ═══════════════════════════════════════════════════════════════
 # HANDLERS
@@ -372,114 +506,147 @@ class Logout(Command):
 @middleware.persist_events()
 class AuthenticateWithCredentialsHandler(CommandHandler):
     """
-    Handles the complete authentication flow.
+    Handles authentication with dual-mode support.
     
-    1. Validate credentials with IdP (Keycloak)
-    2. Optionally check required roles/groups
-    3. Check if user requires 2FA
-    4. If OTP required: issue challenge
-    5. If OTP provided: validate and complete
-    6. Return tokens or challenge
+    STATELESS MODE (track_session=False):
+        - Validates credentials with IdP
+        - If OTP required and no code: returns otp_required
+        - If OTP required and code provided: validates inline
+        - Returns tokens or otp_required status
+        - No session storage used
     
-    Note: Token delivery (header vs cookie) is handled by the framework
-    adapter layer, not by this handler.
+    STATEFUL MODE (track_session=True):
+        - Creates AuthSession aggregate
+        - Stores session in repository
+        - Returns session_id for subsequent ValidateOTP command
+    
+    Token delivery (header vs cookie) is handled by the framework adapter.
     """
     
     def __init__(
         self,
-        idp_adapter: IdentityProviderPort,
-        otp_service: OTPServicePort,
-        session_repo: AuthSessionRepository,
-        token_issuer: TokenIssuerPort,
+        idp: IdentityProviderPort,
+        otp_service: Optional[OTPServicePort] = None,
+        session_repo: Optional[AuthSessionRepository] = None,
     ):
-        self.idp = idp_adapter
-        self.otp = otp_service
-        self.sessions = session_repo
-        self.tokens = token_issuer
+        self.idp = idp
+        self.otp_service = otp_service
+        self.session_repo = session_repo
     
     async def handle(self, cmd: AuthenticateWithCredentials) -> CommandResponse[AuthResult]:
-        # 1. Create auth session (transport-agnostic)
-        ctx = request_context.get()
-        session = AuthSession.create(
-            ip_address=ctx.metadata.get("ip_address", "unknown"),
-            user_agent=ctx.metadata.get("user_agent", "unknown")
-        )
+        all_events = []
+        session = None
+        session_id = None
         
-        # 2. Validate with IdP
+        # Create session only if stateful mode requested
+        if cmd.track_session and self.session_repo:
+            modification = AuthSession.create(
+                ip_address=cmd.ip_address,
+                user_agent=cmd.user_agent,
+            )
+            session = modification.session
+            session_id = session.id
+            all_events.extend(modification.events)
+        
         try:
-            token_response = await self.idp.authenticate(
-                username=cmd.username,
-                password=cmd.password
-            )
+            # 1. Validate with IdP
+            token_response = await self.idp.authenticate(cmd.username, cmd.password)
             user_claims = await self.idp.decode_token(token_response.access_token)
-        except InvalidCredentialsError:
-            session.fail("Invalid credentials")
-            return CommandResponse(
-                result=AuthResult.failed("Invalid credentials"),
-                events=session.clear_domain_events()
+            
+            # 2. Check required groups
+            if cmd.required_groups:
+                user_groups = list(user_claims.groups) if user_claims.groups else []
+                if not any(g in user_groups for g in cmd.required_groups):
+                    return CommandResponse(
+                        result=AuthResult.failed(
+                            error_message="User not in required group",
+                            session_id=session_id,
+                        ),
+                        events=all_events,
+                    )
+            
+            # 3. Check OTP requirement
+            requires_otp = False
+            available_methods = []
+            
+            if self.otp_service:
+                requires_otp = await self.otp_service.is_required_for_user(user_claims)
+                if requires_otp:
+                    available_methods = await self.otp_service.get_available_methods(user_claims)
+            
+            # 4. Handle OTP if required
+            if requires_otp:
+                # Update session if stateful mode
+                if session:
+                    session.credentials_validated(user_claims, requires_otp, available_methods)
+                    await self.session_repo.save(session)
+                
+                # Inline OTP validation (stateless mode)
+                if cmd.otp_code and cmd.otp_method:
+                    is_valid = await self.otp_service.validate(
+                        user_claims, cmd.otp_method, cmd.otp_code
+                    )
+                    if not is_valid:
+                        return CommandResponse(
+                            result=AuthResult.failed(
+                                error_message="Invalid OTP code",
+                                session_id=session_id,
+                            ),
+                            events=all_events,
+                        )
+                    if session:
+                        session.otp_validated(method=cmd.otp_method)
+                        await self.session_repo.save(session)
+                    # Fall through to return tokens
+                
+                elif cmd.otp_method and not cmd.otp_code:
+                    # Send challenge for email/SMS
+                    if cmd.otp_method in ("email", "sms"):
+                        await self.otp_service.send_challenge(user_claims, cmd.otp_method)
+                    return CommandResponse(
+                        result=AuthResult.otp_required(
+                            available_methods=available_methods,
+                            session_id=session_id,
+                        ),
+                        events=all_events,
+                    )
+                
+                else:
+                    # Return available methods
+                    return CommandResponse(
+                        result=AuthResult.otp_required(
+                            available_methods=available_methods,
+                            session_id=session_id,
+                        ),
+                        events=all_events,
+                    )
+            
+            # 5. Return tokens
+            tokens = TokenPair(
+                access_token=token_response.access_token,
+                refresh_token=token_response.refresh_token,
+                expires_in=token_response.expires_in,
             )
-        
-        # 3. Optional: Check required roles/groups
-        if cmd.required_roles:
-            missing = self._get_missing_roles(cmd.required_roles, user_claims)
-            if missing:
-                session.fail(f"Missing required roles: {missing}")
-                return CommandResponse(
-                    result=AuthResult.failed("Unauthorized"),
-                    events=session.clear_domain_events()
-                )
-        
-        # 4. Check if OTP required
-        requires_otp = await self.otp.is_required_for_user(user_claims)
-        session.credentials_validated(user_claims, requires_otp)
-        
-        if requires_otp and not cmd.otp_code:
-            # Issue OTP challenge
-            available_methods = await self.otp.get_available_methods(user_claims)
-            
-            if cmd.otp_method:
-                await self.otp.send_challenge(user_claims, cmd.otp_method)
             
             return CommandResponse(
-                result=AuthResult.otp_required(
-                    session_id=session.id,
-                    methods=available_methods
+                result=AuthResult.success(
+                    tokens=tokens,
+                    user_id=user_claims.sub,
+                    username=user_claims.username,
+                    session_id=session_id,
+                    user_claims=user_claims.to_dict(),
                 ),
-                events=session.clear_domain_events()
+                events=all_events,
             )
-        
-        if requires_otp and cmd.otp_code:
-            # Validate OTP
-            is_valid = await self.otp.validate(
-                user_claims, cmd.otp_method, cmd.otp_code
+            
+        except Exception as e:
+            if session:
+                session.fail(str(e))
+                await self.session_repo.save(session)
+            return CommandResponse(
+                result=AuthResult.failed(error_message=str(e), session_id=session_id),
+                events=all_events,
             )
-            if not is_valid:
-                session.fail("Invalid OTP")
-                return CommandResponse(
-                    result=AuthResult.failed("Invalid OTP"),
-                    events=session.clear_domain_events()
-                )
-            session.otp_validated()
-        
-        # 5. Issue tokens
-        tokens = await self.tokens.issue(
-            user_claims=user_claims,
-            session_id=session.id,
-            token_response=token_response
-        )
-        
-        return CommandResponse(
-            result=AuthResult.success(tokens),
-            events=session.clear_domain_events()
-        )
-    
-    def _get_missing_roles(self, required: list[str], claims: UserClaims) -> list[str]:
-        """
-        Check which required roles the user is missing.
-        Works with both roles and groups (since they're unified in UserClaims.role_names).
-        """
-        user_roles = set(claims.role_names)
-        return [r for r in required if r not in user_roles]
 ```
 
 ### 4.2 Queries & Handlers
