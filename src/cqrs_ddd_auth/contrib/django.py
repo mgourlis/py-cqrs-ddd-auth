@@ -33,6 +33,18 @@ from cqrs_ddd_auth.identity import (
     set_identity,
     set_access_token,
 )
+from cqrs_ddd_auth.contrib.dependency_injector import AuthContainer
+
+try:
+    from dependency_injector.wiring import inject, Provide
+    HAS_DI = True
+except ImportError:
+    HAS_DI = False
+    # Define dummy decorators/classes if DI not installed
+    def inject(f): return f
+    class Provide: 
+        def __getitem__(self, item): return None
+    Provide = Provide()
 
 logger = logging.getLogger(__name__)
 
@@ -161,24 +173,37 @@ class TokenRefreshMiddleware:
     async_capable = True
     sync_capable = False
     
-    def __init__(self, get_response):
+    @inject
+    def __init__(
+        self,
+        get_response,
+        idp: Optional[IdentityProviderPort] = Provide[AuthContainer.identity_provider],
+    ):
         self.get_response = get_response
-        self._adapter: Optional[TokenRefreshAdapter] = None
+        
+        # Fallback to legacy inject if not provided via dependency-injector
+        if idp is None:
+            try:
+                import inject as legacy_inject
+                idp = legacy_inject.instance(IdentityProviderPort)
+            except (ImportError, Exception):
+                pass
+                
+        if idp is None:
+            # We don't raise here yet to allow public paths to work, 
+            # but process_request will fail if tokens present.
+            self._idp = None
+            self._adapter = None
+        else:
+            self._idp = idp
+            threshold = getattr(settings, "AUTH_TOKEN_REFRESH_THRESHOLD", 60)
+            self._adapter = TokenRefreshAdapter(self._idp, threshold)
+            
         self._public_paths: List[str] = getattr(settings, "AUTH_PUBLIC_PATHS", [
             "/health",
             "/api/auth/login",
             "/api/auth/refresh",
         ])
-    
-    def _get_adapter(self) -> TokenRefreshAdapter:
-        """Lazy initialization of adapter."""
-        if self._adapter is None:
-            # Import here to avoid circular imports
-            import inject
-            idp = inject.instance(IdentityProviderPort)
-            threshold = getattr(settings, "AUTH_TOKEN_REFRESH_THRESHOLD", 60)
-            self._adapter = TokenRefreshAdapter(idp, threshold)
-        return self._adapter
     
     def _is_public(self, path: str) -> bool:
         """Check if path is public (no auth required)."""
@@ -195,9 +220,11 @@ class TokenRefreshMiddleware:
             # No tokens found, let auth middleware handle 401
             return await self.get_response(request)
         
+        if self._adapter is None:
+            raise ValueError("IdentityProviderPort is required for TokenRefreshMiddleware (tokens detected)")
+            
         # Delegate to adapter
-        adapter = self._get_adapter()
-        result = await adapter.process_request(
+        result = await self._adapter.process_request(
             tokens.access_token,
             tokens.refresh_token,
         )
@@ -249,20 +276,27 @@ class AuthenticationMiddleware:
     async_capable = True
     sync_capable = False
     
-    def __init__(self, get_response):
+    @inject
+    def __init__(
+        self,
+        get_response,
+        idp: Optional[IdentityProviderPort] = Provide[AuthContainer.identity_provider],
+    ):
         self.get_response = get_response
-        self._idp: Optional[IdentityProviderPort] = None
+        
+        # Fallback to legacy inject if not provided via dependency-injector
+        if idp is None:
+            try:
+                import inject as legacy_inject
+                idp = legacy_inject.instance(IdentityProviderPort)
+            except (ImportError, Exception):
+                pass
+                
+        self._idp = idp
         self._public_paths: List[str] = getattr(settings, "AUTH_PUBLIC_PATHS", [
             "/health",
             "/api/auth/login",
         ])
-    
-    def _get_idp(self) -> IdentityProviderPort:
-        """Lazy initialization of IdP."""
-        if self._idp is None:
-            import inject
-            self._idp = inject.instance(IdentityProviderPort)
-        return self._idp
     
     def _is_public(self, path: str) -> bool:
         """Check if path is public."""
@@ -283,10 +317,14 @@ class AuthenticationMiddleware:
         if not access_token:
             set_identity(AnonymousIdentity())
             return await self.get_response(request)
+            
+        if self._idp is None:
+            logger.warning("AuthenticationMiddleware: No IdentityProviderPort available for token decoding")
+            set_identity(AnonymousIdentity())
+            return await self.get_response(request)
         
         try:
-            idp = self._get_idp()
-            claims = await idp.decode_token(access_token)
+            claims = await self._idp.decode_token(access_token)
             
             identity = AuthenticatedIdentity(
                 user_id=claims.sub,

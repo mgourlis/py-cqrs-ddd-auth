@@ -29,6 +29,17 @@ from fastapi import Request, Response, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 from starlette.middleware.base import BaseHTTPMiddleware
 
+try:
+    from dependency_injector.wiring import inject, Provide
+    HAS_DI = True
+except ImportError:
+    HAS_DI = False
+    # Define dummy decorators/classes if DI not installed
+    def inject(f): return f
+    class Provide: 
+        def __getitem__(self, item): return None
+    Provide = Provide()
+
 from cqrs_ddd_auth.adapters.tokens import (
     TokenSource,
     TokenExtractionResult,
@@ -43,6 +54,8 @@ from cqrs_ddd_auth.identity import (
     set_identity,
     set_access_token,
 )
+from cqrs_ddd_auth.contrib.dependency_injector import AuthContainer
+from cqrs_ddd_auth.ports.identity_provider import IdentityProviderPort
 
 logger = logging.getLogger(__name__)
 
@@ -191,9 +204,11 @@ def get_identity() -> Identity:
     return _get_identity()
 
 
+@inject
 async def get_current_user(
     request: Request,
     token: Optional[str] = Depends(get_optional_token),
+    idp: Optional["IdentityProviderPort"] = Depends(Provide[AuthContainer.identity_provider] if HAS_DI else lambda: None),
 ) -> Identity:
     """
     Dependency that returns the current user identity.
@@ -204,14 +219,36 @@ async def get_current_user(
         @app.get("/me")
         async def me(user: Identity = Depends(get_current_user)):
             return {"username": user.username}
+
+    If Dependency Injector is available and wired, it resolves the IdentityProviderPort.
+    Otherwise, it expects the IdP to be provided via middleware or manual injection.
     """
-    # If middleware already set identity, use it
+    # 1. If middleware already set identity, use it
     identity = _get_identity()
     if identity.is_authenticated:
         return identity
     
-    # Otherwise, set anonymous
-    return AnonymousIdentity()
+    # 2. If no token, return anonymous
+    if not token:
+        return AnonymousIdentity()
+        
+    # 3. If we have a token but no IDP was injected, we can't decode
+    if not idp:
+        logger.warning("get_current_user: No IdentityProviderPort available for token decoding")
+        return AnonymousIdentity()
+        
+    try:
+        claims = await idp.decode_token(token)
+        return AuthenticatedIdentity(
+            user_id=claims.sub,
+            username=claims.username,
+            groups=list(claims.groups) if claims.groups else [],
+            permissions=[],
+            tenant_id=claims.attributes.get("tenant_id"),
+        )
+    except Exception as e:
+        logger.warning(f"Token decode failed in dependency: {e}")
+        return AnonymousIdentity()
 
 
 def require_authenticated(identity: Identity = Depends(get_current_user)) -> Identity:
@@ -278,10 +315,11 @@ class TokenRefreshMiddleware(BaseHTTPMiddleware):
         )
     """
     
+    @inject
     def __init__(
         self,
         app,
-        idp: "IdentityProviderPort",
+        idp: Optional["IdentityProviderPort"] = Provide[AuthContainer.identity_provider],
         public_paths: Optional[List[str]] = None,
         threshold_seconds: int = 60,
         cookie_secure: bool = True,
@@ -289,6 +327,9 @@ class TokenRefreshMiddleware(BaseHTTPMiddleware):
         cookie_max_age: int = 86400,
     ):
         super().__init__(app)
+        if idp is None:
+            raise ValueError("IdentityProviderPort is required for TokenRefreshMiddleware")
+            
         self.adapter = TokenRefreshAdapter(idp, threshold_seconds)
         self.public_paths = public_paths or ["/health", "/api/auth/login"]
         self.cookie_secure = cookie_secure
@@ -351,13 +392,17 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         )
     """
     
+    @inject
     def __init__(
         self,
         app,
-        idp: "IdentityProviderPort",
+        idp: Optional["IdentityProviderPort"] = Provide[AuthContainer.identity_provider],
         public_paths: Optional[List[str]] = None,
     ):
         super().__init__(app)
+        if idp is None:
+            raise ValueError("IdentityProviderPort is required for AuthenticationMiddleware")
+            
         self.idp = idp
         self.public_paths = public_paths or ["/health"]
     

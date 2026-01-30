@@ -45,6 +45,13 @@ class AuthContainer(containers.DeclarativeContainer):
     - sms_sender: SMSSenderPort implementation (optional)
     """
     
+    wiring_config = containers.WiringConfiguration(
+        modules=[
+            "cqrs_ddd_auth.contrib.fastapi",
+            "cqrs_ddd_auth.contrib.django",
+        ]
+    )
+    
     config = providers.Configuration()
     
     # ═══════════════════════════════════════════════════════════════
