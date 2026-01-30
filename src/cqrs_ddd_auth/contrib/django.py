@@ -34,6 +34,7 @@ from cqrs_ddd_auth.identity import (
     set_access_token,
 )
 from cqrs_ddd_auth.contrib.dependency_injector import AuthContainer
+from cqrs_ddd_auth.factory import create_default_idp
 
 try:
     from dependency_injector.wiring import inject, Provide
@@ -43,7 +44,9 @@ except ImportError:
     # Define dummy decorators/classes if DI not installed
     def inject(f): return f
     class Provide: 
-        def __getitem__(self, item): return None
+        def __getitem__(self, item): 
+            # Return a dummy callable so it can be used in dependencies
+            return lambda: None
     Provide = Provide()
 
 logger = logging.getLogger(__name__)
@@ -181,13 +184,8 @@ class TokenRefreshMiddleware:
     ):
         self.get_response = get_response
         
-        # Fallback to legacy inject if not provided via dependency-injector
         if idp is None:
-            try:
-                import inject as legacy_inject
-                idp = legacy_inject.instance(IdentityProviderPort)
-            except (ImportError, Exception):
-                pass
+            idp = create_default_idp()
                 
         if idp is None:
             # We don't raise here yet to allow public paths to work, 
@@ -284,13 +282,8 @@ class AuthenticationMiddleware:
     ):
         self.get_response = get_response
         
-        # Fallback to legacy inject if not provided via dependency-injector
         if idp is None:
-            try:
-                import inject as legacy_inject
-                idp = legacy_inject.instance(IdentityProviderPort)
-            except (ImportError, Exception):
-                pass
+            idp = create_default_idp()
                 
         self._idp = idp
         self._public_paths: List[str] = getattr(settings, "AUTH_PUBLIC_PATHS", [

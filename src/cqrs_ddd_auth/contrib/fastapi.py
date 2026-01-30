@@ -37,7 +37,9 @@ except ImportError:
     # Define dummy decorators/classes if DI not installed
     def inject(f): return f
     class Provide: 
-        def __getitem__(self, item): return None
+        def __getitem__(self, item): 
+            # Return a dummy callable so Depends(Provide[...]) works in FastAPI
+            return lambda: None
     Provide = Provide()
 
 from cqrs_ddd_auth.adapters.tokens import (
@@ -56,6 +58,7 @@ from cqrs_ddd_auth.identity import (
 )
 from cqrs_ddd_auth.contrib.dependency_injector import AuthContainer
 from cqrs_ddd_auth.ports.identity_provider import IdentityProviderPort
+from cqrs_ddd_auth.factory import create_default_idp
 
 logger = logging.getLogger(__name__)
 
@@ -208,21 +211,26 @@ def get_identity() -> Identity:
 async def get_current_user(
     request: Request,
     token: Optional[str] = Depends(get_optional_token),
-    idp: Optional["IdentityProviderPort"] = Depends(Provide[AuthContainer.identity_provider] if HAS_DI else lambda: None),
+    idp: Optional[IdentityProviderPort] = Depends(Provide[AuthContainer.identity_provider]),
 ) -> Identity:
     """
     Dependency that returns the current user identity.
     
-    Requires IdP to be injected via request.state or middleware.
+    If Dependency Injector is available and wired, it resolves the IdentityProviderPort.
+    Otherwise, it attempts to create a default one from environment variables or context.
     
     Usage:
         @app.get("/me")
         async def me(user: Identity = Depends(get_current_user)):
             return {"username": user.username}
-
-    If Dependency Injector is available and wired, it resolves the IdentityProviderPort.
-    Otherwise, it expects the IdP to be provided via middleware or manual injection.
     """
+    # 0. Resolve IDP if not provided via DI
+    if idp is None:
+        # Check request.state as well (set by middleware)
+        idp = getattr(request.state, "identity_provider", None)
+        if idp is None:
+            idp = create_default_idp()
+            
     # 1. If middleware already set identity, use it
     identity = _get_identity()
     if identity.is_authenticated:
@@ -319,7 +327,7 @@ class TokenRefreshMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app,
-        idp: Optional["IdentityProviderPort"] = Provide[AuthContainer.identity_provider],
+        idp: Optional[IdentityProviderPort] = Provide[AuthContainer.identity_provider],
         public_paths: Optional[List[str]] = None,
         threshold_seconds: int = 60,
         cookie_secure: bool = True,
@@ -328,7 +336,10 @@ class TokenRefreshMiddleware(BaseHTTPMiddleware):
     ):
         super().__init__(app)
         if idp is None:
-            raise ValueError("IdentityProviderPort is required for TokenRefreshMiddleware")
+            idp = create_default_idp()
+            
+        if idp is None:
+            raise ValueError("IdentityProviderPort is required for TokenRefreshMiddleware. Provide via DI or Environment Variables.")
             
         self.adapter = TokenRefreshAdapter(idp, threshold_seconds)
         self.public_paths = public_paths or ["/health", "/api/auth/login"]
@@ -396,12 +407,15 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app,
-        idp: Optional["IdentityProviderPort"] = Provide[AuthContainer.identity_provider],
+        idp: Optional[IdentityProviderPort] = Provide[AuthContainer.identity_provider],
         public_paths: Optional[List[str]] = None,
     ):
         super().__init__(app)
         if idp is None:
-            raise ValueError("IdentityProviderPort is required for AuthenticationMiddleware")
+            idp = create_default_idp()
+            
+        if idp is None:
+            raise ValueError("IdentityProviderPort is required for AuthenticationMiddleware. Provide via DI or Environment Variables.")
             
         self.idp = idp
         self.public_paths = public_paths or ["/health"]

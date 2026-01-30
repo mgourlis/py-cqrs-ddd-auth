@@ -62,16 +62,37 @@ class AuthContainer(ToolkitContainer):
     config = providers.Configuration()
     
     # ═══════════════════════════════════════════════════════════════
-    # EXTERNAL DEPENDENCIES (must be provided by host app)
+    # DEFAULT ADAPTERS (can be overridden)
     # ═══════════════════════════════════════════════════════════════
     
-    # Required
-    identity_provider = providers.Dependency()
-    session_repo = providers.Dependency()
+    # Required - defaults to Keycloak if config is present
+    identity_provider = providers.Singleton(
+        "cqrs_ddd_auth.adapters.keycloak.KeycloakAdapter",
+        config=providers.Factory(
+            "cqrs_ddd_auth.adapters.keycloak.KeycloakConfig",
+            server_url=config.keycloak.server_url,
+            realm=config.keycloak.realm,
+            client_id=config.keycloak.client_id,
+            client_secret=config.keycloak.client_secret,
+        ),
+    )
     
-    # Optional (required only for specific OTP methods)
-    totp_secret_repo = providers.Dependency(default=None)
-    otp_challenge_repo = providers.Dependency(default=None)
+    # Required - defaults to In-Memory
+    session_repo = providers.Singleton(
+        "cqrs_ddd_auth.adapters.repositories.InMemorySessionRepository"
+    )
+    
+    # Optional - defaults to In-Memory
+    totp_secret_repo = providers.Singleton(
+        "cqrs_ddd_auth.adapters.repositories.InMemoryTOTPSecretRepository"
+    )
+    
+    # Optional - defaults to In-Memory
+    otp_challenge_repo = providers.Singleton(
+        "cqrs_ddd_auth.adapters.repositories.InMemoryOTPChallengeRepository"
+    )
+    
+    # Optional - must be provided by app if needed
     email_sender = providers.Dependency(default=None)
     sms_sender = providers.Dependency(default=None)
     
