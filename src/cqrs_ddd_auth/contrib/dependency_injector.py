@@ -15,6 +15,13 @@ Usage:
 
 from dependency_injector import containers, providers
 
+try:
+    from cqrs_ddd.contrib.dependency_injector import Container as ToolkitContainer
+except ImportError:
+    class ToolkitContainer(containers.DeclarativeContainer):
+        """Fallback base container when toolkit is not available."""
+        pass
+
 from cqrs_ddd_auth.application.handlers import (
     AuthenticateWithCredentialsHandler,
     ValidateOTPHandler,
@@ -32,7 +39,7 @@ from cqrs_ddd_auth.adapters.otp import (
 )
 
 
-class AuthContainer(containers.DeclarativeContainer):
+class AuthContainer(ToolkitContainer):
     """
     IoC Container for authentication services.
     
