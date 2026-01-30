@@ -189,6 +189,8 @@ class AuthSession(AggregateRoot):
         status: AuthSessionStatus = AuthSessionStatus.PENDING_CREDENTIALS,
         subject_id: Optional[str] = None,
         user_claims: Optional[UserClaims] = None,
+        pending_access_token: Optional[str] = None,  # Stored during OTP phase
+        pending_refresh_token: Optional[str] = None,  # Stored during OTP phase
         otp_challenge_id: Optional[str] = None,
         otp_method: Optional[str] = None,
         failure_reason: Optional[str] = None,
@@ -201,6 +203,8 @@ class AuthSession(AggregateRoot):
         self.status = status
         self.subject_id = subject_id
         self.user_claims = user_claims
+        self.pending_access_token = pending_access_token
+        self.pending_refresh_token = pending_refresh_token
         self.otp_challenge_id = otp_challenge_id
         self.otp_method = otp_method
         self.failure_reason = failure_reason
@@ -228,7 +232,9 @@ class AuthSession(AggregateRoot):
         self, 
         user_claims: UserClaims, 
         requires_otp: bool,
-        available_otp_methods: list[str] | None = None
+        available_otp_methods: list[str] | None = None,
+        access_token: str | None = None,
+        refresh_token: str | None = None,
     ) -> UpdateAuthSessionModification:
         """
         Called when primary credentials (username/password) are valid.
@@ -237,11 +243,17 @@ class AuthSession(AggregateRoot):
             user_claims: Decoded claims from the IdP
             requires_otp: Whether OTP is required for this user
             available_otp_methods: List of OTP methods available (email, sms, totp)
+            access_token: Token to store for later (when OTP is required)
+            refresh_token: Refresh token to store for later
         """
         self._check_can_transition(AuthSessionStatus.PENDING_CREDENTIALS)
         
         self.subject_id = user_claims.sub
         self.user_claims = user_claims
+        
+        # Store tokens for multi-step auth
+        self.pending_access_token = access_token
+        self.pending_refresh_token = refresh_token
         
         events = []
         

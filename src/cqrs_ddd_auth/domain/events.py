@@ -7,18 +7,17 @@ They are immutable records of state changes.
 Uses DomainEvent base class from py-cqrs-ddd-toolkit.
 """
 
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
 from cqrs_ddd.ddd import DomainEvent
 
 
-@dataclass(frozen=True)
+@dataclass
 class AuthSessionCreated(DomainEvent):
     """Raised when a new authentication session is started."""
-    session_id: str
-    ip_address: str
+    session_id: Optional[str] = None
+    ip_address: str = ""
     user_agent: str = ""
     
     @property
@@ -26,14 +25,14 @@ class AuthSessionCreated(DomainEvent):
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "AuthSessionCreated":
         return cls(
-            session_id=data["session_id"],
-            ip_address=data["ip_address"],
+            session_id=data.get("session_id"),
+            ip_address=data.get("ip_address", ""),
             user_agent=data.get("user_agent", ""),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
@@ -42,27 +41,25 @@ class AuthSessionCreated(DomainEvent):
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class CredentialsValidated(DomainEvent):
     """Raised when primary credentials (username/password) are validated."""
-    session_id: str
-    subject_id: str  # Renamed from user_id to avoid conflict with base class
-    requires_otp: bool
+    session_id: Optional[str] = None
+    requires_otp: bool = False
     
     @property
     def aggregate_type(self) -> str:
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CredentialsValidated":
         return cls(
-            session_id=data["session_id"],
-            subject_id=data["subject_id"],
-            requires_otp=data["requires_otp"],
+            session_id=data.get("session_id"),
+            requires_otp=data.get("requires_otp", False),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
             causation_id=data.get("causation_id"),
@@ -70,11 +67,10 @@ class CredentialsValidated(DomainEvent):
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class OTPRequired(DomainEvent):
     """Raised when multi-factor authentication is required."""
-    session_id: str
-    subject_id: str
+    session_id: Optional[str] = None
     available_methods: tuple[str, ...] = ()
     
     @property
@@ -82,14 +78,13 @@ class OTPRequired(DomainEvent):
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "OTPRequired":
         return cls(
-            session_id=data["session_id"],
-            subject_id=data["subject_id"],
+            session_id=data.get("session_id"),
             available_methods=tuple(data.get("available_methods", [])),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
@@ -98,29 +93,27 @@ class OTPRequired(DomainEvent):
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class OTPChallengeIssued(DomainEvent):
     """Raised when an OTP challenge is sent (email/SMS)."""
-    session_id: str
-    subject_id: str
-    method: str  # 'email', 'sms', 'totp'
-    challenge_id: str
+    session_id: Optional[str] = None
+    method: str = ""  # 'email', 'sms', 'totp'
+    challenge_id: str = ""
     
     @property
     def aggregate_type(self) -> str:
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "OTPChallengeIssued":
         return cls(
-            session_id=data["session_id"],
-            subject_id=data["subject_id"],
-            method=data["method"],
-            challenge_id=data["challenge_id"],
+            session_id=data.get("session_id"),
+            method=data.get("method", ""),
+            challenge_id=data.get("challenge_id", ""),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
             causation_id=data.get("causation_id"),
@@ -128,27 +121,25 @@ class OTPChallengeIssued(DomainEvent):
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class OTPValidated(DomainEvent):
     """Raised when OTP is successfully validated."""
-    session_id: str
-    subject_id: str
-    method: str
+    session_id: Optional[str] = None
+    method: str = ""
     
     @property
     def aggregate_type(self) -> str:
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "OTPValidated":
         return cls(
-            session_id=data["session_id"],
-            subject_id=data["subject_id"],
-            method=data["method"],
+            session_id=data.get("session_id"),
+            method=data.get("method", ""),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
             causation_id=data.get("causation_id"),
@@ -156,29 +147,27 @@ class OTPValidated(DomainEvent):
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class OTPValidationFailed(DomainEvent):
     """Raised when OTP validation fails."""
-    session_id: str
-    subject_id: str
-    method: str
-    reason: str  # 'expired', 'invalid', 'max_attempts'
+    session_id: Optional[str] = None
+    method: str = ""
+    reason: str = ""  # 'expired', 'invalid', 'max_attempts'
     
     @property
     def aggregate_type(self) -> str:
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "OTPValidationFailed":
         return cls(
-            session_id=data["session_id"],
-            subject_id=data["subject_id"],
-            method=data["method"],
-            reason=data["reason"],
+            session_id=data.get("session_id"),
+            method=data.get("method", ""),
+            reason=data.get("reason", ""),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
             causation_id=data.get("causation_id"),
@@ -186,44 +175,12 @@ class OTPValidationFailed(DomainEvent):
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class AuthenticationSucceeded(DomainEvent):
     """Raised when the full authentication flow completes successfully."""
-    session_id: str
-    subject_id: str
-    username: str
-    groups: tuple[str, ...]
-    ip_address: str
-    
-    @property
-    def aggregate_type(self) -> str:
-        return "AuthSession"
-    
-    @property
-    def aggregate_id(self) -> str:
-        return self.session_id
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AuthenticationSucceeded":
-        return cls(
-            session_id=data["session_id"],
-            subject_id=data["subject_id"],
-            username=data["username"],
-            groups=tuple(data.get("groups", [])),
-            ip_address=data["ip_address"],
-            event_id=data.get("event_id"),
-            correlation_id=data.get("correlation_id"),
-            causation_id=data.get("causation_id"),
-            user_id=data.get("user_id"),
-        )
-
-
-@dataclass(frozen=True)
-class AuthenticationFailed(DomainEvent):
-    """Raised when authentication fails at any step."""
-    session_id: str
-    reason: str
-    subject_id: Optional[str] = None
+    session_id: Optional[str] = None
+    username: str = ""
+    groups: tuple[str, ...] = ()
     ip_address: str = ""
     
     @property
@@ -231,15 +188,15 @@ class AuthenticationFailed(DomainEvent):
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "AuthenticationFailed":
+    def from_dict(cls, data: Dict[str, Any]) -> "AuthenticationSucceeded":
         return cls(
-            session_id=data["session_id"],
-            reason=data["reason"],
-            subject_id=data.get("subject_id"),
+            session_id=data.get("session_id"),
+            username=data.get("username", ""),
+            groups=tuple(data.get("groups", [])),
             ip_address=data.get("ip_address", ""),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
@@ -248,11 +205,38 @@ class AuthenticationFailed(DomainEvent):
         )
 
 
-@dataclass(frozen=True)
+@dataclass
+class AuthenticationFailed(DomainEvent):
+    """Raised when authentication fails at any step."""
+    session_id: Optional[str] = None
+    reason: str = ""
+    ip_address: str = ""
+    
+    @property
+    def aggregate_type(self) -> str:
+        return "AuthSession"
+    
+    @property
+    def aggregate_id(self) -> Optional[str]:
+        return self.session_id
+    
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "AuthenticationFailed":
+        return cls(
+            session_id=data.get("session_id"),
+            reason=data.get("reason", ""),
+            ip_address=data.get("ip_address", ""),
+            event_id=data.get("event_id"),
+            correlation_id=data.get("correlation_id"),
+            causation_id=data.get("causation_id"),
+            user_id=data.get("user_id"),
+        )
+
+
+@dataclass
 class SessionRevoked(DomainEvent):
     """Raised when a session is explicitly revoked (logout)."""
-    session_id: str
-    subject_id: str
+    session_id: Optional[str] = None
     reason: str = "user_logout"
     
     @property
@@ -260,14 +244,13 @@ class SessionRevoked(DomainEvent):
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "SessionRevoked":
         return cls(
-            session_id=data["session_id"],
-            subject_id=data["subject_id"],
+            session_id=data.get("session_id"),
             reason=data.get("reason", "user_logout"),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
@@ -276,25 +259,23 @@ class SessionRevoked(DomainEvent):
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class TokenRefreshed(DomainEvent):
     """Raised when tokens are refreshed."""
-    session_id: str
-    subject_id: str
+    session_id: Optional[str] = None
     
     @property
     def aggregate_type(self) -> str:
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TokenRefreshed":
         return cls(
-            session_id=data["session_id"],
-            subject_id=data["subject_id"],
+            session_id=data.get("session_id"),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
             causation_id=data.get("causation_id"),
@@ -302,27 +283,25 @@ class TokenRefreshed(DomainEvent):
         )
 
 
-@dataclass(frozen=True)
+@dataclass
 class TokenExpired(DomainEvent):
     """Raised when a token expires."""
-    session_id: str
-    subject_id: str
-    token_type: str  # 'access' or 'refresh'
+    session_id: Optional[str] = None
+    token_type: str = ""  # 'access' or 'refresh'
     
     @property
     def aggregate_type(self) -> str:
         return "AuthSession"
     
     @property
-    def aggregate_id(self) -> str:
+    def aggregate_id(self) -> Optional[str]:
         return self.session_id
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TokenExpired":
         return cls(
-            session_id=data["session_id"],
-            subject_id=data["subject_id"],
-            token_type=data["token_type"],
+            session_id=data.get("session_id"),
+            token_type=data.get("token_type", ""),
             event_id=data.get("event_id"),
             correlation_id=data.get("correlation_id"),
             causation_id=data.get("causation_id"),
