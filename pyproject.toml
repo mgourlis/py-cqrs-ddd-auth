@@ -28,10 +28,10 @@ classifiers = [
 
 # Core dependencies
 dependencies = [
-    "py-cqrs-ddd-toolkit @ git+ssh://git@github.com/mgourlis/py-cqrs-ddd-toolkit.git",
-    "search_query_dsl @ git+ssh://git@github.com/mgourlis/search_query_dsl.git",
-    "stateful-abac-common @ git+ssh://git@github.com/mgourlis/stateful-abac-policy-engine.git#subdirectory=common",
-    "stateful-abac-sdk[db] @ git+ssh://git@github.com/mgourlis/stateful-abac-policy-engine.git#subdirectory=python-sdk",
+    "py-cqrs-ddd-toolkit @ git+https://github.com/mgourlis/py-cqrs-ddd-toolkit.git",
+    "search_query_dsl @ git+https://github.com/mgourlis/search_query_dsl.git",
+    "stateful-abac-common @ git+https://github.com/mgourlis/stateful-abac-policy-engine.git#subdirectory=common",
+    "stateful-abac-sdk[db] @ git+https://github.com/mgourlis/stateful-abac-policy-engine.git#subdirectory=python-sdk",
     "pyotp>=2.9.0",  # TOTP/HOTP for 2FA
 ]
 
