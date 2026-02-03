@@ -23,6 +23,7 @@ Why use this over standard auth libraries?
 *   **Domain-Driven**: Aggregates for `AuthSession`, `TokenPair`, `OTPChallenge`.
 *   **Infrastructure Agnostic**: Support for Keycloak (`python-keycloak`) out of the box.
 *   **Multi-Factor Authentication**: Built-in support for TOTP, Email, and SMS OTP.
+*   **Step-Up Auth**: Dedicated OTP endpoints for on-demand privilege elevation.
 *   **Stateful & Stateless Modes**: Flexible session management (DB-backed or signed JWE).
 *   **Authorization**: Integrated RBAC and Attribute-Based Access Control (ABAC) with ownership awareness.
 *   **Framework Integrations**: Drop-in support for **FastAPI** and **Django**.
@@ -134,30 +135,24 @@ async def login_stateful(
     return result
 ```
 
-**3. Step-Up Saga Endpoint**
+**3. MFA Step-Up Flow (concept)**
+For sensitive operations, the API returns a 403 error, and the client uses the dedicated OTP endpoints to elevate privileges.
+
 ```python
 @app.post("/transfer")
 async def transfer_funds(
     amount: Decimal,
-    otp_code: Optional[str] = None,
     user: Identity = Depends(require_authenticated),
-    mediator: Mediator = Depends(Provide[AuthContainer.mediator])
+    # Custom dependency or middleware that checks for MFA elevation
+    is_elevated: bool = Depends(verify_elevation("transfer_funds"))
 ):
-    # 1. Start Saga
-    saga = AuthSaga(user_id=user.user_id)
-    saga.add_step(AuthStep.OTP_VERIFICATION, method=OTPMethod.TOTP)
-
-    # 2. Execute with context (otp_code from request)
-    result = await saga.execute(context={"otp_code": otp_code})
-
-    if not result.success:
-        # Return 403 Forbidden with specific error to trigger client MFA prompt
-        raise HTTPException(status_code=403, detail="MFA_REQUIRED")
-
-    # 3. If Saga success, perform sensitive business logic
+    # This point is only reached if the user has verified their identity via OTP
+    # for this specific operation within the last 5 minutes.
     await mediator.send(TransferFundsCommand(user_id=user.user_id, amount=amount))
     return {"status": "transferred"}
 ```
+> [!NOTE]
+> When `verify_elevation` fails, it raises an `AuthorizationError(code="MFA_REQUIRED")` and emits a `SensitiveOperationRequested` event to trigger the Step-Up Saga.
 
 ### B. Django Implementation
 
@@ -188,26 +183,15 @@ class StatefulLoginView(CQRSView):
         return self.success(result)
 ```
 
-**3. Step-Up Saga View**
+**3. MFA Step-Up Flow (concept)**
 ```python
 class TransferFundsView(CQRSView):
     @require_authenticated
+    @verify_elevation("transfer_funds") # Custom decorator
     async def post(self, request):
-        user = get_identity()
         data = json.loads(request.body)
-
-        # 1. Run Saga
-        saga = AuthSaga(user_id=user.user_id)
-        saga.add_step(AuthStep.OTP_VERIFICATION, method=OTPMethod.TOTP)
-
-        result = await saga.execute(context={"otp_code": data.get("otp_code")})
-
-        if not result.success:
-            return JsonResponse({"error": "MFA_REQUIRED"}, status=403)
-
-        # 2. Business Logic
         await self.dispatch_command(TransferFundsCommand(
-            user_id=user.user_id,
+            user_id=get_identity().user_id,
             amount=data['amount']
         ))
         return JsonResponse({"status": "transferred"})
@@ -283,6 +267,23 @@ urlpatterns = [
 ]
 ```
 
+### API Reference
+
+Both FastAPI and Django integrations expose the following endpoints:
+
+| Endpoint | Method | Description | Step-Up Support |
+| :--- | :--- | :--- | :--- |
+| `/login` | `POST` | Primary authentication (password/credentials) | - |
+| `/refresh` | `POST` | Refresh access token using refresh token | - |
+| `/logout` | `POST` | Revoke current/specified session | - |
+| `/me` | `GET` | Get current user profile and TOTP status | - |
+| `/otp/challenge` | `POST` | Trigger an OTP challenge (email/sms) | Yes (via Token) |
+| `/otp/validate` | `POST` | Validate OTP code to elevate privileges | Yes (via Token) |
+| `/totp/setup` | `POST` | Initialize/Confirm TOTP (Google Authenticator) | - |
+| `/users` | `GET` | List users (Admin only) | - |
+
+---
+
 ### 3. Protecting Endpoints (FastAPI)
 
 Use the provided dependencies to secure your own endpoints.
@@ -327,30 +328,34 @@ async def delete_user(request, user_id):
     ...
 ```
 
-### 5. Advanced: Step-Up Authentication (Saga Pattern)
+### 5. Step-Up Authentication (Distributed Saga)
 
-For sensitive operations, use the `AuthSaga` to enforce MFA.
+The library uses an event-driven choreography (Saga pattern) to handle step-up authentication. This avoids blocking handlers and provides a clean way to resume operations.
 
-```python
-from cqrs_ddd_auth.application.sagas import AuthSaga, AuthStep
-from cqrs_ddd_auth.domain.value_objects import OTPMethod
+1.  **Operation Request**: User calls a sensitive endpoint.
+2.  **MFA Check**: System detects higher assurance is needed. It raises `MFA_REQUIRED` and emits `SensitiveOperationRequested`.
+3.  **Saga Activation**: `StepUpAuthenticationSaga` starts, listening for the event.
+4.  **Client Verification**: Frontend calls `/auth/otp/validate` with `correlation_id` (the `operation_id` from the 403 error).
+5.  **Completion**: Saga receives `OTPValidated`, grants temporary elevation, and (optionally) resumes the original operation.
 
-async def transfer_funds(user_id: str, amount: Decimal, otp_code: str):
-    # 1. Initialize Saga
-    saga = AuthSaga(user_id=user.user_id)
+#### Dedicated OTP Endpoints
 
-    # 2. Add Steps
-    saga.add_step(AuthStep.OTP_VERIFICATION, method=OTPMethod.TOTP)
+Use these endpoints for standalone OTP verification (Step-Up flows) or custom login screens.
 
-    # 3. Execute (validates OTP code against user's secret)
-    result = await saga.execute(context={"otp_code": otp_code})
+**FastAPI / Django Paths:**
+- `POST /auth/otp/challenge`: Request a new code (supports `email`, `sms`).
+- `POST /auth/otp/validate`: Validate a code.
 
-    if result.success:
-        # Proceed with transfer
-        ...
-    else:
-        raise AuthenticationError("MFA failed")
+**Schema (Validate):**
+```json
+{
+  "code": "123456",
+  "method": "totp",
+  "correlation_id": "original-operation-id"
+}
 ```
+> [!IMPORTANT]
+> Always pass the `correlation_id` from the sensitive operation's error response. This allows the Saga to correctly route the `OTPValidated` event back to the original request context.
 
 ### 6. High-Performance ABAC Query Filtering
 

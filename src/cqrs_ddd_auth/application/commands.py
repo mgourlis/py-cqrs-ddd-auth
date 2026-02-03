@@ -55,16 +55,16 @@ class AuthenticateWithCredentials(Command):
 @dataclass(kw_only=True)
 class ValidateOTP(Command):
     """
-    Validate a one-time password (stateful mode).
+    Validate a one-time password.
 
-    Called after AuthenticateWithCredentials when:
-    - track_session=True was used
-    - OTP is required
-    - Client sends session_id + OTP code
+    Used in:
+    1. Stateful mode: session_id + code
+    2. Stateless/Step-up mode: access_token + code
     """
 
-    session_id: str
     code: str
+    session_id: Optional[str] = None
+    access_token: Optional[str] = None
     method: str = "totp"  # totp, email, sms
 
 

@@ -6,6 +6,8 @@ from dependency_injector.wiring import inject, Provide
 from cqrs_ddd_auth.contrib.dependency_injector import AuthContainer
 from cqrs_ddd_auth.application.commands import (
     AuthenticateWithCredentials,
+    ValidateOTP,
+    SendOTPChallenge,
     RefreshTokens,
     Logout,
     SetupTOTP,
@@ -36,6 +38,19 @@ class RefreshRequest(BaseModel):
 
 class LogoutRequest(BaseModel):
     refresh_token: str
+
+
+class OTPChallengeRequest(BaseModel):
+    method: str = "email"
+    session_id: Optional[str] = None
+    correlation_id: Optional[str] = None
+
+
+class OTPValidateRequest(BaseModel):
+    code: str
+    method: str = "totp"
+    session_id: Optional[str] = None
+    correlation_id: Optional[str] = None
 
 
 # -----------------------------------------------------------------------------
@@ -106,6 +121,51 @@ async def list_users(
     return result
 
 
+@inject
+async def otp_challenge(
+    request: Request,
+    data: OTPChallengeRequest,
+    mediator: Any = Depends(Provide[AuthContainer.mediator]),
+):
+    # Try to get token from header for step-up
+    auth_header = request.headers.get("Authorization")
+    access_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        access_token = auth_header[7:]
+
+    cmd = SendOTPChallenge(
+        method=data.method,
+        session_id=data.session_id,
+        access_token=access_token,
+        correlation_id=data.correlation_id,
+    )
+    result = await mediator.send(cmd)
+    return result
+
+
+@inject
+async def otp_validate(
+    request: Request,
+    data: OTPValidateRequest,
+    mediator: Any = Depends(Provide[AuthContainer.mediator]),
+):
+    # Try to get token from header for step-up
+    auth_header = request.headers.get("Authorization")
+    access_token = None
+    if auth_header and auth_header.startswith("Bearer "):
+        access_token = auth_header[7:]
+
+    cmd = ValidateOTP(
+        code=data.code,
+        method=data.method,
+        session_id=data.session_id,
+        access_token=access_token,
+        correlation_id=data.correlation_id,
+    )
+    result = await mediator.send(cmd)
+    return result
+
+
 # -----------------------------------------------------------------------------
 # Router Factory
 # -----------------------------------------------------------------------------
@@ -143,6 +203,18 @@ def create_auth_router() -> APIRouter:
         list_users,
         methods=["GET"],
         dependencies=[Depends(require_groups("/admin"))],
+    )
+
+    cqrs.router.add_api_route(
+        "/otp/challenge",
+        otp_challenge,
+        methods=["POST"],
+    )
+
+    cqrs.router.add_api_route(
+        "/otp/validate",
+        otp_validate,
+        methods=["POST"],
     )
 
     return cqrs.router

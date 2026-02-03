@@ -182,7 +182,7 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
     ) -> CommandResponse[AuthResult]:
         all_events: List[Any] = []
         user_claims: Optional[UserClaims] = None
-        keycloak_tokens: Optional[TokenPair] = None
+        idp_tokens: Optional[TokenPair] = None
         session: Optional[AuthSession] = None
         session_id: Optional[str] = command.session_id
 
@@ -230,14 +230,14 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
                     user_claims = UserClaims.from_dict(session.user_claims)
 
                 if session.pending_access_token:
-                    keycloak_tokens = TokenPair(
+                    idp_tokens = TokenPair(
                         access_token=session.pending_access_token,
                         refresh_token=session.pending_refresh_token or "",
                     )
 
             # B. STATELESS CONTINUATION (Step 2 or 3)
             elif command.pre_auth_token and self.pre_auth_service:
-                claims_dict, keycloak_tokens = self.pre_auth_service.decrypt(
+                claims_dict, idp_tokens = self.pre_auth_service.decrypt(
                     command.pre_auth_token
                 )
                 user_claims = UserClaims.from_dict(claims_dict)
@@ -245,13 +245,11 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
             # C. INITIAL LOGIN (Step 1)
             else:
                 # We need to authenticate with password if we didn't restore context above
-                if not keycloak_tokens:
-                    keycloak_tokens = await self.idp.authenticate(
+                if not idp_tokens:
+                    idp_tokens = await self.idp.authenticate(
                         command.username, command.password
                     )
-                    user_claims = await self.idp.decode_token(
-                        keycloak_tokens.access_token
-                    )
+                    user_claims = await self.idp.decode_token(idp_tokens.access_token)
 
         except Exception as e:
             if session:
@@ -332,8 +330,8 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
                         username=user_claims.username,
                         requires_otp=True,
                         available_otp_methods=available_methods,
-                        access_token=keycloak_tokens.access_token,
-                        refresh_token=keycloak_tokens.refresh_token,
+                        access_token=idp_tokens.access_token,
+                        refresh_token=idp_tokens.refresh_token,
                         user_claims=user_claims.to_dict(),
                     )
                     all_events.extend(update_mod.events)
@@ -357,7 +355,7 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
                 # Still need OTP code
                 return await self._otp_required_response(
                     user_claims,
-                    keycloak_tokens,
+                    idp_tokens,
                     available_methods,
                     session,
                     session_id,
@@ -369,7 +367,7 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
                 # Still need OTP
                 return await self._otp_required_response(
                     user_claims,
-                    keycloak_tokens,
+                    idp_tokens,
                     available_methods,
                     session,
                     session_id,
@@ -384,8 +382,8 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
                     subject_id=user_claims.sub,
                     username=user_claims.username,
                     requires_otp=False,
-                    access_token=keycloak_tokens.access_token,
-                    refresh_token=keycloak_tokens.refresh_token,
+                    access_token=idp_tokens.access_token,
+                    refresh_token=idp_tokens.refresh_token,
                     user_claims=user_claims.to_dict(),
                 )
                 all_events.extend(update_mod.events)
@@ -404,7 +402,7 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
 
         return CommandResponse(
             result=AuthResult.success(
-                tokens=keycloak_tokens,
+                tokens=idp_tokens,
                 user_id=user_claims.sub,
                 username=user_claims.username,
                 session_id=session_id,
@@ -418,7 +416,7 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
     async def _otp_required_response(
         self,
         user_claims: UserClaims,
-        keycloak_tokens: TokenPair,
+        idp_tokens: TokenPair,
         available_methods: List[str],
         session: Optional[AuthSession],
         session_id: Optional[str],
@@ -428,7 +426,7 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
         pre_auth_token = None
         if not session and self.pre_auth_service:
             pre_auth_token = self.pre_auth_service.encrypt(
-                user_claims.to_dict(), keycloak_tokens
+                user_claims.to_dict(), idp_tokens
             )
 
         if session:
@@ -437,8 +435,8 @@ class AuthenticateWithCredentialsHandler(CommandHandler[AuthResult]):
                 username=user_claims.username,
                 requires_otp=True,
                 available_otp_methods=available_methods,
-                access_token=keycloak_tokens.access_token,
-                refresh_token=keycloak_tokens.refresh_token,
+                access_token=idp_tokens.access_token,
+                refresh_token=idp_tokens.refresh_token,
                 user_claims=user_claims.to_dict(),
             )
             all_events.extend(update_mod.events)
@@ -468,12 +466,32 @@ class ValidateOTPHandler(CommandHandler[AuthResult]):
         self,
         otp_service: OTPServicePort,
         session_repo: AuthSessionPort,
+        idp: Optional[IdentityProviderPort] = None,
     ):
         super().__init__()
         self.otp_service = otp_service
         self.session_repo = session_repo
+        self.idp = idp
 
     async def handle(self, command: ValidateOTP) -> CommandResponse[AuthResult]:
+        if command.session_id:
+            return await self._handle_stateful(command)
+        elif command.access_token:
+            return await self._handle_stateless(command)
+        else:
+            return CommandResponse(
+                result=AuthResult.failed(
+                    error_message="Either session_id or access_token must be provided",
+                    error_code="INVALID_COMMAND",
+                ),
+                events=[],
+                correlation_id=command.correlation_id,
+                causation_id=command.command_id,
+            )
+
+    async def _handle_stateful(
+        self, command: ValidateOTP
+    ) -> CommandResponse[AuthResult]:
         session = await self.session_repo.get(command.session_id)
         if not session:
             return CommandResponse(
@@ -590,6 +608,80 @@ class ValidateOTPHandler(CommandHandler[AuthResult]):
                     session_id=session.id,
                 ),
                 events=all_events,
+                correlation_id=command.correlation_id,
+                causation_id=command.command_id,
+            )
+
+    async def _handle_stateless(
+        self, command: ValidateOTP
+    ) -> CommandResponse[AuthResult]:
+        if not self.idp:
+            return CommandResponse(
+                result=AuthResult.failed(
+                    error_message="Identity Provider not configured for stateless validation",
+                    error_code="IDP_NOT_CONFIGURED",
+                ),
+                events=[],
+                correlation_id=command.correlation_id,
+                causation_id=command.command_id,
+            )
+
+        try:
+            # 1. Identify user from access token
+            user_claims = await self.idp.decode_token(command.access_token)
+
+            # 2. Validate OTP
+            is_valid = await self.otp_service.validate(
+                claims=user_claims,
+                method=command.method,
+                code=command.code,
+            )
+
+            if not is_valid:
+                return CommandResponse(
+                    result=AuthResult.failed(
+                        error_message="Invalid OTP code",
+                        error_code="INVALID_OTP",
+                    ),
+                    events=[],
+                    correlation_id=command.correlation_id,
+                    causation_id=command.command_id,
+                )
+
+            # 3. Emit OTPValidated event for Sagas
+            from cqrs_ddd_auth.domain.events import OTPValidated
+
+            event = OTPValidated(
+                session_id=None,
+                subject_id=user_claims.sub,
+                method=command.method,
+            )
+            # Enrich with required metadata for saga matching
+            event.user_id = user_claims.sub
+            event.correlation_id = command.correlation_id
+            event.causation_id = command.command_id
+
+            return CommandResponse(
+                result=AuthResult.success(
+                    tokens=TokenPair(
+                        access_token=command.access_token, refresh_token=""
+                    ),
+                    user_id=user_claims.sub,
+                    username=user_claims.username,
+                    user_claims=user_claims.to_dict(),
+                ),
+                events=[event],
+                correlation_id=command.correlation_id,
+                causation_id=command.command_id,
+            )
+
+        except Exception as e:
+            return CommandResponse(
+                result=AuthResult.failed(
+                    error_message=str(e),
+                    error_code="AUTHENTICATION_FAILED",
+                ),
+                events=[],
                 correlation_id=command.correlation_id,
                 causation_id=command.command_id,
             )

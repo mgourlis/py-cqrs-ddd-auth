@@ -6,6 +6,8 @@ from dependency_injector.wiring import inject, Provide
 from cqrs_ddd_auth.contrib.dependency_injector import AuthContainer
 from cqrs_ddd_auth.application.commands import (
     AuthenticateWithCredentials,
+    ValidateOTP,
+    SendOTPChallenge,
     RefreshTokens,
     Logout,
     SetupTOTP,
@@ -146,6 +148,47 @@ class ListUsersView(AuthView):
         return self.success(result)
 
 
+class OTPChallengeView(AuthView):
+    async def post(self, request: HttpRequest) -> JsonResponse:
+        data = self.parse_body(request)
+
+        # Try to get token from header for step-up
+        auth_header = request.headers.get("HTTP_AUTHORIZATION")
+        access_token = None
+        if auth_header and auth_header.startswith("Bearer "):
+            access_token = auth_header[7:]
+
+        cmd = SendOTPChallenge(
+            method=data.get("method", "email"),
+            session_id=data.get("session_id"),
+            access_token=access_token,
+            correlation_id=data.get("correlation_id"),
+        )
+        result = await self.dispatch_command(cmd)
+        return self.success(result)
+
+
+class OTPValidateView(AuthView):
+    async def post(self, request: HttpRequest) -> JsonResponse:
+        data = self.parse_body(request)
+
+        # Try to get token from header for step-up
+        auth_header = request.headers.get("HTTP_AUTHORIZATION")
+        access_token = None
+        if auth_header and auth_header.startswith("Bearer "):
+            access_token = auth_header[7:]
+
+        cmd = ValidateOTP(
+            code=data.get("code"),
+            method=data.get("method", "totp"),
+            session_id=data.get("session_id"),
+            access_token=access_token,
+            correlation_id=data.get("correlation_id"),
+        )
+        result = await self.dispatch_command(cmd)
+        return self.success(result)
+
+
 def get_auth_urls() -> List[Any]:
     """
     Factory to get URL patterns for auth endpoints.
@@ -157,4 +200,6 @@ def get_auth_urls() -> List[Any]:
         path("me/", MeView.as_view(), name="auth_me"),
         path("totp/setup/", TOTPSetupView.as_view(), name="auth_totp_setup"),
         path("users/", ListUsersView.as_view(), name="auth_users"),
+        path("otp/challenge/", OTPChallengeView.as_view(), name="auth_otp_challenge"),
+        path("otp/validate/", OTPValidateView.as_view(), name="auth_otp_validate"),
     ]

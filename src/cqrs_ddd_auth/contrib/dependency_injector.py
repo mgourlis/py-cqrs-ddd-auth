@@ -257,6 +257,7 @@ class AuthContainer(ToolkitContainer):
         ValidateOTPHandler,
         otp_service=otp_service,
         session_repo=session_repo,
+        idp=identity_provider,
     )
 
     send_otp_challenge_handler = providers.Factory(
