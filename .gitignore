@@ -50,4 +50,6 @@ Thumbs.db
 
 # Demo folder if present
 demo/
-
+docs/
+docs/authentication_implementation_proposal.md
+docs/IMPLEMENTATION_NOTES.md

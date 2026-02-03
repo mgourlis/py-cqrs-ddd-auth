@@ -5,13 +5,17 @@ from cqrs_ddd.core import CommandResponse, QueryResponse
 from cqrs_ddd_auth.application.commands import (
     AuthenticateWithCredentials,
     ValidateOTP,
-    SendOTPChallenge,
     RefreshTokens,
     Logout,
     RevokeAllSessions,
     SetupTOTP,
     ConfirmTOTPSetup,
     DisableTOTP,
+    # Saga Commands
+    SendOTPChallenge,
+    GrantTemporaryElevation,
+    RevokeElevation,
+    ResumeSensitiveOperation,
     # User management commands
     CreateUser,
     UpdateUser,
@@ -23,6 +27,18 @@ from cqrs_ddd_auth.application.commands import (
     RemoveRoles,
     AddToGroups,
     RemoveFromGroups,
+)
+from cqrs_ddd_auth.application.sync_commands import (
+    SyncIdentityProvider,
+    SyncIdentityProviderHandler,
+    SyncResult,
+)
+from cqrs_ddd_auth.application.event_handlers import (
+    IdentityChangeSyncHandler,
+    register_identity_sync_handlers,
+)
+from cqrs_ddd_auth.application.sagas import (
+    StepUpAuthenticationSaga,
 )
 from cqrs_ddd_auth.application.queries import (
     # Auth queries
@@ -123,7 +139,13 @@ __all__ = [
     "RevokeAllSessions",
     "SetupTOTP",
     "ConfirmTOTPSetup",
+    "ConfirmTOTPSetup",
     "DisableTOTP",
+    # Saga Commands
+    "SendOTPChallenge",
+    "GrantTemporaryElevation",
+    "RevokeElevation",
+    "ResumeSensitiveOperation",
     # User Management Commands
     "CreateUser",
     "UpdateUser",
@@ -135,6 +157,13 @@ __all__ = [
     "RemoveRoles",
     "AddToGroups",
     "RemoveFromGroups",
+    # Sync Commands
+    "SyncIdentityProvider",
+    "SyncIdentityProviderHandler",
+    "SyncResult",
+    # Event Handlers
+    "IdentityChangeSyncHandler",
+    "register_identity_sync_handlers",
     # Auth Queries
     "GetUserInfo",
     "GetAvailableOTPMethods",
@@ -215,5 +244,6 @@ __all__ = [
     "GetUserRolesHandler",
     "GetUserGroupsHandler",
     "GetTypeLevelPermissionsHandler",
+    # Sagas
+    "StepUpAuthenticationSaga",
 ]
-

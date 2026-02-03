@@ -124,22 +124,22 @@ class Identity(Protocol):
     """Protocol for identity information passed to handlers."""
     @property
     def user_id(self) -> str: ...
-    
+
     @property
     def username(self) -> str: ...
-    
+
     @property
     def groups(self) -> list[str]: ...
-    
+
     @property
     def permissions(self) -> list[str]: ...
-    
+
     @property
     def tenant_id(self) -> Optional[str]: ...
-    
+
     @property
     def is_authenticated(self) -> bool: ...
-    
+
     @property
     def is_system(self) -> bool: ...
 
@@ -254,42 +254,42 @@ class Credentials(ValueObject):
 class TOTPSecret(ValueObject):
     """
     TOTP secret for time-based OTP using pyotp.
-    
+
     This is used for authenticator app-based 2FA (Google Authenticator, Authy, etc.).
     """
     secret: str  # Base32 encoded secret
-    
+
     @classmethod
     def generate(cls) -> "TOTPSecret":
         """Generate a new random TOTP secret."""
         import pyotp
         return cls(secret=pyotp.random_base32())
-    
+
     def get_provisioning_uri(self, username: str, issuer: str) -> str:
         """
         Generate a provisioning URI for QR code display.
-        
+
         Users scan this with their authenticator app to set up 2FA.
         """
         import pyotp
         totp = pyotp.TOTP(self.secret)
         return totp.provisioning_uri(name=username, issuer_name=issuer)
-    
+
     def verify_code(self, code: str, valid_window: int = 1) -> bool:
         """
         Verify a TOTP code against this secret.
-        
+
         Args:
             code: The 6-digit code from the user's authenticator app
             valid_window: Number of time periods before/after current to accept (default: 1)
-        
+
         Returns:
             True if the code is valid
         """
         import pyotp
         totp = pyotp.TOTP(self.secret)
         return totp.verify(code, valid_window=valid_window)
-    
+
     def get_current_code(self) -> str:
         """Get the current TOTP code (useful for testing)."""
         import pyotp
@@ -304,7 +304,7 @@ class UserClaims(ValueObject):
     email: str
     groups: tuple[str, ...]
     attributes: dict
-    
+
     def to_identity(self) -> Identity:
         return AuthenticatedIdentity(
             user_id=self.sub,
@@ -334,7 +334,7 @@ class AuthSession(AggregateRoot):
     """
     Aggregate representing an authentication session.
     Tracks the multi-step authentication process.
-    
+
     Note: This aggregate is transport-agnostic. Token delivery (header vs cookie)
     is handled at the framework adapter layer, not here.
     """
@@ -353,7 +353,7 @@ class AuthSession(AggregateRoot):
         self.otp_challenge_id: Optional[str] = None
         self.failure_reason: Optional[str] = None
         self.expires_at = datetime.utcnow() + timedelta(minutes=30)
-    
+
     @classmethod
     def create(cls, ip_address: str, user_agent: str) -> "AuthSession":
         session = cls(
@@ -366,12 +366,12 @@ class AuthSession(AggregateRoot):
             ip_address=ip_address
         ))
         return session
-    
+
     def credentials_validated(self, user_claims: UserClaims, requires_otp: bool):
         """Called when primary credentials are valid."""
         self.user_id = user_claims.sub
         self.user_claims = user_claims
-        
+
         if requires_otp:
             self.status = AuthSessionStatus.PENDING_OTP
             self.add_domain_event(OTPRequired(
@@ -380,13 +380,13 @@ class AuthSession(AggregateRoot):
             ))
         else:
             self._complete_authentication()
-    
+
     def otp_validated(self):
         """Called when OTP is successfully validated."""
         if self.status != AuthSessionStatus.PENDING_OTP:
             raise DomainError("Session not awaiting OTP")
         self._complete_authentication()
-    
+
     def fail(self, reason: str):
         """Mark authentication as failed."""
         self.status = AuthSessionStatus.FAILED
@@ -396,12 +396,12 @@ class AuthSession(AggregateRoot):
             user_id=self.user_id,
             reason=reason
         ))
-    
+
     def revoke(self):
         """Revoke an active session (logout)."""
         self.status = AuthSessionStatus.REVOKED
         self.add_domain_event(SessionRevoked(session_id=self.id))
-    
+
     def _complete_authentication(self):
         self.status = AuthSessionStatus.AUTHENTICATED
         self.add_domain_event(AuthenticationSucceeded(
@@ -429,33 +429,33 @@ from cqrs_ddd.middleware import middleware
 class AuthenticateWithCredentials(Command):
     """
     Initiate authentication with username/password.
-    
+
     Supports dual mode (see Section 2.0):
-    
+
     STATELESS MODE (track_session=False, default):
         - No server-side session needed
         - If OTP required, returns otp_required status
         - Client retries with same credentials + otp_method + otp_code
-    
+
     STATEFUL MODE (track_session=True):
         - Creates AuthSession for tracking
         - Returns session_id with otp_required
         - Client uses ValidateOTP command with session_id
-    
+
     Token delivery (header vs cookie) is determined by the framework adapter.
     """
     username: str
     password: str
-    
+
     # Mode selection
     track_session: bool = False  # Enable stateful mode with session tracking
     ip_address: str = ""         # Required if track_session=True
     user_agent: str = ""         # Required if track_session=True
-    
+
     # Inline OTP (stateless mode - client sends everything in one request on retry)
     otp_method: Optional[str] = None  # "totp", "email", "sms"
     otp_code: Optional[str] = None
-    
+
     # Authorization checks
     required_groups: Optional[List[str]] = None  # User must be in at least one
 
@@ -463,7 +463,7 @@ class AuthenticateWithCredentials(Command):
 class ValidateOTP(Command):
     """
     Validate OTP for pending session (stateful mode only).
-    
+
     Used when track_session=True was specified and OTP is required.
     """
     session_id: str
@@ -474,7 +474,7 @@ class ValidateOTP(Command):
 class SendOTPChallenge(Command):
     """
     Request OTP challenge to be sent (email/SMS).
-    
+
     Works in both modes:
     - Stateful: Uses session_id
     - Stateless: Uses access_token to identify user
@@ -492,7 +492,7 @@ class RefreshTokens(Command):
 class Logout(Command):
     """
     Terminate user session and revoke tokens.
-    
+
     session_id is optional - only needed for stateful mode.
     """
     refresh_token: str
@@ -507,22 +507,22 @@ class Logout(Command):
 class AuthenticateWithCredentialsHandler(CommandHandler):
     """
     Handles authentication with dual-mode support.
-    
+
     STATELESS MODE (track_session=False):
         - Validates credentials with IdP
         - If OTP required and no code: returns otp_required
         - If OTP required and code provided: validates inline
         - Returns tokens or otp_required status
         - No session storage used
-    
+
     STATEFUL MODE (track_session=True):
         - Creates AuthSession aggregate
         - Stores session in repository
         - Returns session_id for subsequent ValidateOTP command
-    
+
     Token delivery (header vs cookie) is handled by the framework adapter.
     """
-    
+
     def __init__(
         self,
         idp: IdentityProviderPort,
@@ -532,12 +532,12 @@ class AuthenticateWithCredentialsHandler(CommandHandler):
         self.idp = idp
         self.otp_service = otp_service
         self.session_repo = session_repo
-    
+
     async def handle(self, cmd: AuthenticateWithCredentials) -> CommandResponse[AuthResult]:
         all_events = []
         session = None
         session_id = None
-        
+
         # Create session only if stateful mode requested
         if cmd.track_session and self.session_repo:
             modification = AuthSession.create(
@@ -547,12 +547,12 @@ class AuthenticateWithCredentialsHandler(CommandHandler):
             session = modification.session
             session_id = session.id
             all_events.extend(modification.events)
-        
+
         try:
             # 1. Validate with IdP
             token_response = await self.idp.authenticate(cmd.username, cmd.password)
             user_claims = await self.idp.decode_token(token_response.access_token)
-            
+
             # 2. Check required groups
             if cmd.required_groups:
                 user_groups = list(user_claims.groups) if user_claims.groups else []
@@ -564,23 +564,23 @@ class AuthenticateWithCredentialsHandler(CommandHandler):
                         ),
                         events=all_events,
                     )
-            
+
             # 3. Check OTP requirement
             requires_otp = False
             available_methods = []
-            
+
             if self.otp_service:
                 requires_otp = await self.otp_service.is_required_for_user(user_claims)
                 if requires_otp:
                     available_methods = await self.otp_service.get_available_methods(user_claims)
-            
+
             # 4. Handle OTP if required
             if requires_otp:
                 # Update session if stateful mode
                 if session:
                     session.credentials_validated(user_claims, requires_otp, available_methods)
                     await self.session_repo.save(session)
-                
+
                 # Inline OTP validation (stateless mode)
                 if cmd.otp_code and cmd.otp_method:
                     is_valid = await self.otp_service.validate(
@@ -598,7 +598,7 @@ class AuthenticateWithCredentialsHandler(CommandHandler):
                         session.otp_validated(method=cmd.otp_method)
                         await self.session_repo.save(session)
                     # Fall through to return tokens
-                
+
                 elif cmd.otp_method and not cmd.otp_code:
                     # Send challenge for email/SMS
                     if cmd.otp_method in ("email", "sms"):
@@ -610,7 +610,7 @@ class AuthenticateWithCredentialsHandler(CommandHandler):
                         ),
                         events=all_events,
                     )
-                
+
                 else:
                     # Return available methods
                     return CommandResponse(
@@ -620,14 +620,14 @@ class AuthenticateWithCredentialsHandler(CommandHandler):
                         ),
                         events=all_events,
                     )
-            
+
             # 5. Return tokens
             tokens = TokenPair(
                 access_token=token_response.access_token,
                 refresh_token=token_response.refresh_token,
                 expires_in=token_response.expires_in,
             )
-            
+
             return CommandResponse(
                 result=AuthResult.success(
                     tokens=tokens,
@@ -638,7 +638,7 @@ class AuthenticateWithCredentialsHandler(CommandHandler):
                 ),
                 events=all_events,
             )
-            
+
         except Exception as e:
             if session:
                 session.fail(str(e))
@@ -669,17 +669,17 @@ class GetUserInfoHandler(QueryHandler):
     Returns user claims and type-level permissions.
     Demonstrates integration with ABAC engine.
     """
-    
+
     def __init__(self, abac_client: ABACAuthorizationPort):
         self.abac = abac_client
-    
+
     async def handle(self, query: GetUserInfo) -> QueryResponse[UserInfoResult]:
         identity = get_identity()
         access_token = get_access_token()
-        
+
         if not identity.is_authenticated:
             raise AuthenticationError("Not authenticated")
-        
+
         # Fetch type-level permissions from ABAC
         permissions = {}
         if access_token:
@@ -688,7 +688,7 @@ class GetUserInfoHandler(QueryHandler):
                 access_token=access_token,
                 resource_types=resource_types
             )
-        
+
         return QueryResponse(result=UserInfoResult(
             user_id=identity.user_id,
             username=identity.username,
@@ -707,46 +707,46 @@ from cqrs_ddd.saga import Saga, saga_step, SagaContext
 class StepUpAuthenticationSaga(Saga):
     """
     Handles step-up authentication for sensitive operations.
-    
+
     Flow:
     1. Sensitive operation requested → Issue OTP challenge
     2. OTP validated → Grant temporary elevated access
     3. Operation completed OR timeout → Revoke elevation
     """
-    
+
     @saga_step(SensitiveOperationRequested)
     async def on_sensitive_operation_requested(self, event: SensitiveOperationRequested):
         self.context.state["operation_id"] = event.operation_id
         self.context.state["user_id"] = event.user_id
         self.context.state["required_action"] = event.action
-        
+
         self.dispatch_command(IssueOTPChallenge(
             user_id=event.user_id,
             reason=f"Confirm {event.action}"
         ))
-    
+
     @saga_step(OTPChallengeValidated)
     async def on_otp_validated(self, event: OTPChallengeValidated):
         if event.user_id != self.context.state["user_id"]:
             return  # Not our saga
-        
+
         self.dispatch_command(GrantTemporaryElevation(
             user_id=event.user_id,
             action=self.context.state["required_action"],
             ttl_seconds=300
         ))
-        
+
         self.dispatch_command(ResumeSensitiveOperation(
             operation_id=self.context.state["operation_id"]
         ))
-    
+
     @saga_step(SensitiveOperationCompleted)
     async def on_operation_completed(self, event: SensitiveOperationCompleted):
         self.dispatch_command(RevokeElevation(
             user_id=self.context.state["user_id"]
         ))
         self.complete()
-    
+
     async def compensate(self):
         """Revoke elevation if saga fails."""
         if "user_id" in self.context.state:
@@ -766,45 +766,45 @@ from typing import Protocol
 
 class IdentityProviderPort(Protocol):
     """Port for identity provider operations."""
-    
+
     async def authenticate(self, username: str, password: str) -> TokenResponse:
         """Authenticate with username/password."""
         ...
-    
+
     async def refresh(self, refresh_token: str) -> TokenResponse:
         """Refresh access token."""
         ...
-    
+
     async def decode_token(self, access_token: str) -> UserClaims:
         """Decode and validate JWT."""
         ...
-    
+
     async def logout(self, refresh_token: str) -> None:
         """Terminate IdP session."""
         ...
 
 class OTPServicePort(Protocol):
     """Port for OTP operations."""
-    
+
     async def is_required_for_user(self, claims: UserClaims) -> bool:
         """Check if user requires 2FA."""
         ...
-    
+
     async def get_available_methods(self, claims: UserClaims) -> list[str]:
         """Get OTP methods available for user."""
         ...
-    
+
     async def send_challenge(self, claims: UserClaims, method: str) -> str:
         """Send OTP via specified method. Returns challenge ID."""
         ...
-    
+
     async def validate(self, claims: UserClaims, method: str, code: str) -> bool:
         """Validate OTP code."""
         ...
 
 class ABACAuthorizationPort(Protocol):
     """Port for ABAC authorization checks."""
-    
+
     async def check_access(
         self,
         access_token: str,
@@ -814,7 +814,7 @@ class ABACAuthorizationPort(Protocol):
     ) -> list[str]:
         """Check which resources user can access. Returns authorized IDs."""
         ...
-    
+
     async def get_permitted_actions(
         self,
         access_token: str,
@@ -823,7 +823,7 @@ class ABACAuthorizationPort(Protocol):
     ) -> dict[str, list[str]]:
         """Get permitted actions per resource."""
         ...
-    
+
     async def list_resource_types(self) -> list[str]:
         """List all resource types."""
         ...
@@ -838,7 +838,7 @@ class ABACAuthorizationPort(Protocol):
 
 class KeycloakIdentityProvider(IdentityProviderPort):
     """Keycloak implementation of IdentityProviderPort."""
-    
+
     def __init__(
         self,
         server_url: str,
@@ -852,7 +852,7 @@ class KeycloakIdentityProvider(IdentityProviderPort):
             client_id=client_id,
             client_secret_key=client_secret
         )
-    
+
     async def authenticate(self, username: str, password: str) -> TokenResponse:
         async with httpx.AsyncClient() as client:
             response = await client.post(
@@ -868,7 +868,7 @@ class KeycloakIdentityProvider(IdentityProviderPort):
             if response.status_code != 200:
                 raise InvalidCredentialsError()
             return TokenResponse(**response.json())
-    
+
     async def decode_token(self, access_token: str) -> UserClaims:
         # Validate signature against Keycloak's public key
         decoded = self.keycloak.decode_token(
@@ -889,12 +889,12 @@ class KeycloakIdentityProvider(IdentityProviderPort):
 
 class ABACEngineClient(ABACAuthorizationPort):
     """Adapter for Stateful ABAC Policy Engine."""
-    
+
     def __init__(self, base_url: str, realm: str):
         self.base_url = base_url
         self.realm = realm
         self._client: Optional[FWSAuthClient] = None
-    
+
     async def check_access(
         self,
         access_token: str,
@@ -904,7 +904,7 @@ class ABACEngineClient(ABACAuthorizationPort):
     ) -> list[str]:
         client = await self._get_client()
         client.set_token(access_token)
-        
+
         response = await client.auth.check_access(
             resources=[CheckAccessItem(
                 resource_type_name=resource_type,
@@ -913,7 +913,7 @@ class ABACEngineClient(ABACAuthorizationPort):
                 return_type="id_list" if resource_ids else "decision"
             )]
         )
-        
+
         if response and response.results:
             answer = response.results[0].answer
             if isinstance(answer, list):
@@ -929,10 +929,10 @@ class ABACEngineClient(ABACAuthorizationPort):
 class TOTPService(OTPServicePort):
     """
     TOTP implementation using pyotp for authenticator app-based 2FA.
-    
+
     Supports Google Authenticator, Authy, Microsoft Authenticator, etc.
     """
-    
+
     def __init__(
         self,
         secret_repository: TOTPSecretRepository,
@@ -942,17 +942,17 @@ class TOTPService(OTPServicePort):
         self.secrets = secret_repository
         self.issuer_name = issuer_name
         self.valid_window = valid_window
-    
+
     async def is_required_for_user(self, claims: UserClaims) -> bool:
         """Check if user has TOTP enabled."""
         secret = await self.secrets.get_by_user_id(claims.sub)
         return secret is not None
-    
+
     async def get_available_methods(self, claims: UserClaims) -> list[str]:
         """TOTP only supports 'totp' method."""
         secret = await self.secrets.get_by_user_id(claims.sub)
         return ["totp"] if secret else []
-    
+
     async def send_challenge(self, claims: UserClaims, method: str) -> str:
         """
         TOTP doesn't require sending a challenge.
@@ -960,40 +960,40 @@ class TOTPService(OTPServicePort):
         """
         # No-op for TOTP - code is already on user's authenticator app
         return "totp-challenge"
-    
+
     async def validate(self, claims: UserClaims, method: str, code: str) -> bool:
         """Validate a TOTP code from the user's authenticator app."""
         import pyotp
-        
+
         secret = await self.secrets.get_by_user_id(claims.sub)
         if not secret:
             return False
-        
+
         totp = pyotp.TOTP(secret.secret)
         return totp.verify(code, valid_window=self.valid_window)
-    
+
     async def setup_totp(self, claims: UserClaims) -> tuple[TOTPSecret, str]:
         """
         Generate a new TOTP secret for a user.
-        
+
         Returns:
             Tuple of (TOTPSecret, provisioning_uri for QR code)
         """
         import pyotp
-        
+
         secret = TOTPSecret.generate()
         totp = pyotp.TOTP(secret.secret)
         uri = totp.provisioning_uri(name=claims.email, issuer_name=self.issuer_name)
-        
+
         # Store the secret
         await self.secrets.save(claims.sub, secret)
-        
+
         return secret, uri
-    
+
     async def verify_setup(self, claims: UserClaims, code: str) -> bool:
         """
         Verify the initial TOTP code during setup.
-        
+
         This confirms the user has correctly configured their authenticator.
         """
         return await self.validate(claims, "totp", code)
@@ -1001,15 +1001,15 @@ class TOTPService(OTPServicePort):
 
 class TOTPSecretRepository(Protocol):
     """Repository for storing user TOTP secrets."""
-    
+
     async def get_by_user_id(self, user_id: str) -> Optional[TOTPSecret]:
         """Get TOTP secret for a user."""
         ...
-    
+
     async def save(self, user_id: str, secret: TOTPSecret) -> None:
         """Save TOTP secret for a user."""
         ...
-    
+
     async def delete(self, user_id: str) -> None:
         """Remove TOTP secret (disable 2FA)."""
         ...
@@ -1022,11 +1022,11 @@ class TOTPSecretRepository(Protocol):
 class EmailOTPService(OTPServicePort):
     """
     Email-based OTP implementation using pyotp.
-    
+
     Generates a TOTP code and sends it via email. The code is valid
     for a configurable time window (default: 2 minutes).
     """
-    
+
     def __init__(
         self,
         otp_repository: OTPChallengeRepository,
@@ -1040,25 +1040,25 @@ class EmailOTPService(OTPServicePort):
         self.token_length = token_length
         self.expiration_seconds = expiration_seconds
         self.app_name = app_name
-    
+
     async def is_required_for_user(self, claims: UserClaims) -> bool:
         """Email OTP is available if user has a verified email."""
         return bool(claims.email)
-    
+
     async def get_available_methods(self, claims: UserClaims) -> list[str]:
         """Return email method if user has email."""
         return ["email"] if claims.email else []
-    
+
     async def send_challenge(self, claims: UserClaims, method: str) -> str:
         """Generate and send OTP code via email."""
         import pyotp
         from datetime import datetime, timedelta, timezone
-        
+
         # Generate secret and code
         secret = pyotp.random_base32()
         totp = pyotp.TOTP(secret, digits=self.token_length, interval=self.expiration_seconds)
         code = totp.now()
-        
+
         # Store challenge
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.expiration_seconds)
         await self.otp_repo.save_challenge(
@@ -1067,41 +1067,41 @@ class EmailOTPService(OTPServicePort):
             secret=secret,
             expires_at=expires_at
         )
-        
+
         # Send email
         await self.email_sender.send(
             to=claims.email,
             subject=f"{self.app_name} - Your Verification Code",
             body=f"Your verification code is: {code}\n\nThis code expires in {self.expiration_seconds // 60} minutes."
         )
-        
+
         # Return obfuscated email for UI display
         return f"Code sent to {self._obfuscate_email(claims.email)}"
-    
+
     async def validate(self, claims: UserClaims, method: str, code: str) -> bool:
         """Validate the emailed OTP code."""
         import pyotp
         from datetime import datetime, timezone
-        
+
         challenge = await self.otp_repo.get_challenge(claims.sub, "email")
         if not challenge:
             return False
-        
+
         # Check expiration
         if datetime.now(timezone.utc) > challenge.expires_at:
             return False
-        
+
         # Validate with pyotp
         interval = int((challenge.expires_at - challenge.created_at).total_seconds())
         totp = pyotp.TOTP(challenge.secret, digits=len(code), interval=interval)
-        
+
         if totp.verify(code, valid_window=1):
             await self.otp_repo.mark_used(claims.sub, "email")
             return True
-        
+
         await self.otp_repo.increment_attempts(claims.sub, "email")
         return False
-    
+
     def _obfuscate_email(self, email: str) -> str:
         """Obfuscate email for display: j****@example.com"""
         local, domain = email.split("@")
@@ -1116,11 +1116,11 @@ class EmailOTPService(OTPServicePort):
 class SMSOTPService(OTPServicePort):
     """
     SMS-based OTP implementation using pyotp.
-    
+
     Generates a TOTP code and sends it via SMS. The code is valid
     for a configurable time window (default: 2 minutes).
     """
-    
+
     def __init__(
         self,
         otp_repository: OTPChallengeRepository,
@@ -1134,29 +1134,29 @@ class SMSOTPService(OTPServicePort):
         self.token_length = token_length
         self.expiration_seconds = expiration_seconds
         self.app_name = app_name
-    
+
     async def is_required_for_user(self, claims: UserClaims) -> bool:
         """SMS OTP is available if user has a verified phone number."""
         return bool(claims.attributes.get("phone_number"))
-    
+
     async def get_available_methods(self, claims: UserClaims) -> list[str]:
         """Return sms method if user has phone number."""
         return ["sms"] if claims.attributes.get("phone_number") else []
-    
+
     async def send_challenge(self, claims: UserClaims, method: str) -> str:
         """Generate and send OTP code via SMS."""
         import pyotp
         from datetime import datetime, timedelta, timezone
-        
+
         phone = claims.attributes.get("phone_number")
         if not phone:
             raise ValueError("User has no phone number configured")
-        
+
         # Generate secret and code
         secret = pyotp.random_base32()
         totp = pyotp.TOTP(secret, digits=self.token_length, interval=self.expiration_seconds)
         code = totp.now()
-        
+
         # Store challenge
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=self.expiration_seconds)
         await self.otp_repo.save_challenge(
@@ -1165,40 +1165,40 @@ class SMSOTPService(OTPServicePort):
             secret=secret,
             expires_at=expires_at
         )
-        
+
         # Send SMS
         await self.sms_sender.send(
             to=phone,
             message=f"Your {self.app_name} code is: {code}"
         )
-        
+
         # Return obfuscated phone for UI display
         return f"Code sent to {self._obfuscate_phone(phone)}"
-    
+
     async def validate(self, claims: UserClaims, method: str, code: str) -> bool:
         """Validate the SMS OTP code."""
         import pyotp
         from datetime import datetime, timezone
-        
+
         challenge = await self.otp_repo.get_challenge(claims.sub, "sms")
         if not challenge:
             return False
-        
+
         # Check expiration
         if datetime.now(timezone.utc) > challenge.expires_at:
             return False
-        
+
         # Validate with pyotp
         interval = int((challenge.expires_at - challenge.created_at).total_seconds())
         totp = pyotp.TOTP(challenge.secret, digits=len(code), interval=interval)
-        
+
         if totp.verify(code, valid_window=1):
             await self.otp_repo.mark_used(claims.sub, "sms")
             return True
-        
+
         await self.otp_repo.increment_attempts(claims.sub, "sms")
         return False
-    
+
     def _obfuscate_phone(self, phone: str) -> str:
         """Obfuscate phone for display: +1***-**56"""
         if len(phone) <= 4:
@@ -1224,21 +1224,21 @@ class OTPChallenge:
 
 class OTPChallengeRepository(Protocol):
     """Repository for storing OTP challenges (email/SMS)."""
-    
+
     async def save_challenge(
         self, user_id: str, method: str, secret: str, expires_at: datetime
     ) -> None:
         """Save a new OTP challenge."""
         ...
-    
+
     async def get_challenge(self, user_id: str, method: str) -> Optional[OTPChallenge]:
         """Get active OTP challenge for user."""
         ...
-    
+
     async def mark_used(self, user_id: str, method: str) -> None:
         """Mark challenge as used after successful validation."""
         ...
-    
+
     async def increment_attempts(self, user_id: str, method: str) -> None:
         """Increment failed attempts counter."""
         ...
@@ -1246,7 +1246,7 @@ class OTPChallengeRepository(Protocol):
 
 class EmailSenderPort(Protocol):
     """Port for sending emails."""
-    
+
     async def send(self, to: str, subject: str, body: str) -> None:
         """Send an email."""
         ...
@@ -1254,7 +1254,7 @@ class EmailSenderPort(Protocol):
 
 class SMSSenderPort(Protocol):
     """Port for sending SMS messages."""
-    
+
     async def send(self, to: str, message: str) -> None:
         """Send an SMS."""
         ...
@@ -1274,17 +1274,17 @@ from cqrs_ddd.middleware import Middleware
 class AuthorizationMiddleware(Middleware):
     """
     CQRS middleware for fine-grained authorization.
-    
+
     Modes:
     - Pre-execution: Check before handler runs, fail fast
     - Post-execution: Run handler, then filter results
-    
+
     Resolution Order:
     1. Type-level public check (is_public flag)
     2. Type-level ACL (resource_id=NULL)
     3. Resource-level ACL (specific IDs)
     """
-    
+
     def __init__(
         self,
         abac: ABACAuthorizationPort,
@@ -1300,19 +1300,19 @@ class AuthorizationMiddleware(Middleware):
         self.resource_id_attr = resource_id_attr
         self.required_permissions = required_permissions or []
         self.filter_result_attr = filter_result_attr
-    
+
     def apply(self, handler_func, command):
         async def wrapped(*args, **kwargs):
             identity = get_identity()
             access_token = get_access_token()
-            
+
             # Skip for system identity
             if identity.is_system:
                 return await handler_func(*args, **kwargs)
-            
+
             # Resolve resource type
             resource_type = self._resolve_resource_type(command)
-            
+
             if self.filter_result_attr:
                 # Post-execution filtering
                 return await self._filter_result(
@@ -1325,13 +1325,13 @@ class AuthorizationMiddleware(Middleware):
                     handler_func, args, kwargs, command,
                     resource_type, access_token
                 )
-        
+
         return wrapped
-    
+
     async def _check_access(self, handler_func, args, kwargs, command, resource_type, token):
         """Pre-execution authorization check."""
         resource_ids = self._resolve_resource_ids(command)
-        
+
         for permission in self.required_permissions:
             authorized_ids = await self.abac.check_access(
                 access_token=token,
@@ -1339,21 +1339,21 @@ class AuthorizationMiddleware(Middleware):
                 resource_type=resource_type,
                 resource_ids=resource_ids
             )
-            
+
             if resource_ids and not all(rid in authorized_ids for rid in resource_ids):
                 raise AuthorizationError(f"Access denied for {permission} on {resource_type}")
-        
+
         return await handler_func(*args, **kwargs)
-    
+
     async def _filter_result(self, handler_func, args, kwargs, resource_type, token):
         """Post-execution result filtering."""
         result = await handler_func(*args, **kwargs)
-        
+
         # Extract candidates from result
         candidates = self._get_attr_by_path(result, self.filter_result_attr)
         if not candidates:
             return result
-        
+
         # Check per-permission
         allowed_ids = set(candidates)
         for permission in self.required_permissions:
@@ -1364,11 +1364,11 @@ class AuthorizationMiddleware(Middleware):
                 resource_ids=list(allowed_ids)
             )
             allowed_ids &= set(authorized)
-        
+
         # Filter result
         filtered = [c for c in candidates if c in allowed_ids]
         self._set_attr_by_path(result, self.filter_result_attr, filtered)
-        
+
         return result
 ```
 
@@ -1378,12 +1378,12 @@ class AuthorizationMiddleware(Middleware):
 class PermittedActionsMiddleware(Middleware):
     """
     Enrich query results with permitted actions per entity.
-    
+
     After the query handler runs, this middleware fetches what actions
     the current user can perform on each returned entity and attaches
     a 'permitted_actions' attribute.
     """
-    
+
     def __init__(
         self,
         abac: ABACAuthorizationPort,
@@ -1395,39 +1395,39 @@ class PermittedActionsMiddleware(Middleware):
         self.result_entities_attr = result_entities_attr
         self.resource_type_attr = resource_type_attr
         self.entity_id_attr = entity_id_attr
-    
+
     def apply(self, handler_func, command):
         async def wrapped(*args, **kwargs):
             result = await handler_func(*args, **kwargs)
-            
+
             entities = self._get_attr_by_path(result, self.result_entities_attr)
             if not entities:
                 return result
-            
+
             access_token = get_access_token()
             if not access_token:
                 return result
-            
+
             # Group entities by resource type
             by_type = self._group_by_type(entities)
-            
+
             # Fetch permitted actions per type
             for resource_type, type_entities in by_type.items():
                 entity_ids = [self._get_id(e) for e in type_entities]
-                
+
                 actions_map = await self.abac.get_permitted_actions(
                     access_token=access_token,
                     resource_type=resource_type,
                     resource_ids=entity_ids
                 )
-                
+
                 # Attach to entities
                 for entity in type_entities:
                     eid = self._get_id(entity)
                     entity.permitted_actions = actions_map.get(eid, [])
-            
+
             return result
-        
+
         return wrapped
 ```
 
@@ -1452,20 +1452,20 @@ def create_auth_dependency(
     Factory for FastAPI auth dependency.
     Extracts token, validates, and sets up context.
     """
-    
+
     async def get_identity(request: Request) -> Identity:
         # Extract token (header or cookie)
         token = _extract_token(request, cookie_name, header_name)
-        
+
         if not token:
             return AnonymousIdentity()
-        
+
         try:
             claims = await idp.decode_token(token)
             identity = claims.to_identity()
         except InvalidTokenError:
             return AnonymousIdentity()
-        
+
         # Set up request context
         ctx = RequestContext(
             identity=identity,
@@ -1477,9 +1477,9 @@ def create_auth_dependency(
             }
         )
         request_context.set(ctx)
-        
+
         return identity
-    
+
     return get_identity
 
 # Usage in FastAPI
@@ -1503,19 +1503,19 @@ class AuthenticationMiddleware:
     Django ASGI middleware that extracts identity and sets context.
     All authentication logic is delegated to the domain layer.
     """
-    
+
     def __init__(self, get_response, idp: IdentityProviderPort):
         self.get_response = get_response
         self.idp = idp
-    
+
     async def __call__(self, request):
         # Skip public paths
         if self._is_public(request.path):
             return await self.get_response(request)
-        
+
         # Extract token
         token = self._extract_token(request)
-        
+
         # Decode and validate
         if token:
             try:
@@ -1525,7 +1525,7 @@ class AuthenticationMiddleware:
                 identity = AnonymousIdentity()
         else:
             identity = AnonymousIdentity()
-        
+
         # Set request context
         ctx = RequestContext(
             identity=identity,
@@ -1533,7 +1533,7 @@ class AuthenticationMiddleware:
             access_token=token
         )
         request_context.set(ctx)
-        
+
         return await self.get_response(request)
 ```
 
@@ -1557,15 +1557,15 @@ class RefreshTokensHandler(CommandHandler):
     Refreshes tokens via the identity provider.
     Emits TokenRefreshed event for audit trail.
     """
-    
+
     def __init__(self, idp: IdentityProviderPort):
         self.idp = idp
-    
+
     async def handle(self, cmd: RefreshTokens) -> CommandResponse[TokenResult]:
         try:
             new_tokens = await self.idp.refresh(cmd.refresh_token)
             claims = await self.idp.decode_token(new_tokens.access_token)
-            
+
             return CommandResponse(
                 result=TokenResult(
                     access_token=new_tokens.access_token,
@@ -1600,7 +1600,7 @@ class TokenExtractionResult:
     access_token: str | None = None
     refresh_token: str | None = None
     source: TokenSource | None = None
-    
+
     @property
     def is_present(self) -> bool:
         return self.access_token is not None
@@ -1625,10 +1625,10 @@ class TokenRefreshAdapter:
     Framework-agnostic token refresh logic.
     Framework middlewares delegate to this adapter.
     """
-    
+
     def __init__(self, mediator: Mediator):
         self.mediator = mediator
-    
+
     async def process_request(
         self,
         access_token: str | None,
@@ -1636,29 +1636,29 @@ class TokenRefreshAdapter:
     ) -> TokenRefreshResult:
         """
         Check if refresh is needed and perform it transparently.
-        
+
         Returns:
             TokenRefreshResult with new tokens or indication to re-auth
         """
         if not access_token or not refresh_token:
             return TokenRefreshResult(needs_auth=True)
-        
+
         # Check expiration without full signature validation
         if not self._is_expired(access_token):
             return TokenRefreshResult(current_token=access_token)
-        
+
         # Refresh via Command (goes through full CQRS pipeline)
         result = await self.mediator.send(RefreshTokens(refresh_token=refresh_token))
-        
+
         if result.result.expired:
             return TokenRefreshResult(needs_auth=True)
-        
+
         return TokenRefreshResult(
             new_access_token=result.result.access_token,
             new_refresh_token=result.result.refresh_token,
             user_claims=result.result.user_claims
         )
-    
+
     def _is_expired(self, token: str, buffer_seconds: int = 30) -> bool:
         """
         Decode token WITHOUT signature verification to check expiration.
@@ -1681,48 +1681,48 @@ class TokenRefreshAdapter:
 class TokenRefreshMiddleware:
     """
     Django ASGI middleware for transparent token refresh.
-    
+
     Auto-detects token source (header vs cookie) and responds accordingly.
     No custom headers required from clients.
     """
-    
+
     def __init__(self, get_response, refresh_adapter: TokenRefreshAdapter):
         self.get_response = get_response
         self.adapter = refresh_adapter
-    
+
     async def __call__(self, request):
         if self._is_public(request.path):
             return await self.get_response(request)
-        
+
         # Auto-detect: extract tokens and remember where they came from
         tokens = self._extract_tokens(request)
-        
+
         if not tokens.is_present:
             # No tokens found, let auth middleware handle 401
             return await self.get_response(request)
-        
+
         # Delegate to adapter (no client_type needed)
         result = await self.adapter.process_request(
             tokens.access_token,
             tokens.refresh_token
         )
-        
+
         if result.needs_auth:
             return JsonResponse({"error": "Unauthorized"}, status=401)
-        
+
         if result.new_access_token:
             # Inject refreshed token for downstream middleware
             self._inject_token(request, result.new_access_token)
-            
+
             # Process request with fresh token
             response = await self.get_response(request)
-            
+
             # Return tokens via the same channel they arrived
             self._attach_tokens(response, result, tokens.source)
             return response
-        
+
         return await self.get_response(request)
-    
+
     def _extract_tokens(self, request) -> TokenExtractionResult:
         """
         Extract tokens and detect their source.
@@ -1736,7 +1736,7 @@ class TokenRefreshMiddleware:
                 refresh_token=request.headers.get("X-Refresh-Token"),
                 source=TokenSource.HEADER
             )
-        
+
         # 2. Fall back to cookies (web clients)
         access = request.COOKIES.get("access_token")
         if access:
@@ -1745,13 +1745,13 @@ class TokenRefreshMiddleware:
                 refresh_token=request.COOKIES.get("refresh_token"),
                 source=TokenSource.COOKIE
             )
-        
+
         return TokenExtractionResult()
-    
+
     def _inject_token(self, request, token: str):
         """Inject refreshed token for downstream KeycloakMiddleware."""
         request._refreshed_access_token = token
-    
+
     def _attach_tokens(self, response, result: TokenRefreshResult, source: TokenSource):
         """Return tokens via the same channel they arrived."""
         if source == TokenSource.HEADER:
@@ -1799,7 +1799,7 @@ class RoleSource(Enum):
 class GroupPathStrategy(Enum):
     """
     How to convert Keycloak group paths to role names.
-    
+
     Example group path: /web/admin/editor
     """
     FULL_PATH = "full_path"         # → "web/admin/editor" (default, preserves hierarchy)
@@ -1818,14 +1818,14 @@ class AuthRole(ValueObject):
     - Keycloak client roles
     - Keycloak groups (when merge_groups_as_roles=True)
     - Custom application roles
-    
+
     For authorization purposes, the source is irrelevant—
     only the name matters for ACL matching.
     """
     name: str
     source: RoleSource
     attributes: dict = field(default_factory=dict)
-    
+
     @classmethod
     def from_keycloak_role(cls, data: dict) -> "AuthRole":
         return cls(
@@ -1833,7 +1833,7 @@ class AuthRole(ValueObject):
             source=RoleSource.REALM_ROLE,
             attributes=data.get("attributes", {})
         )
-    
+
     @classmethod
     def from_keycloak_group(
         cls,
@@ -1843,39 +1843,39 @@ class AuthRole(ValueObject):
     ) -> list["AuthRole"]:
         """
         Convert Keycloak group path to one or more roles.
-        
+
         Args:
             group_path: Full group path, e.g., "/web/admin/editor"
             strategy: How to handle the path
             prefix: Optional prefix for role names
-        
+
         Returns:
             List of AuthRole objects (usually 1, but may be multiple for ALL_SEGMENTS)
         """
         path = group_path.strip("/")
         segments = path.split("/") if path else []
-        
+
         if not segments:
             return []
-        
+
         roles = []
-        
+
         if strategy == GroupPathStrategy.FULL_PATH:
             # /web/admin/editor → "web/admin/editor"
             name = f"{prefix}{path}" if prefix else path
             roles.append(cls(name=name, source=RoleSource.GROUP))
-        
+
         elif strategy == GroupPathStrategy.LAST_SEGMENT:
             # /web/admin/editor → "editor"
             name = f"{prefix}{segments[-1]}" if prefix else segments[-1]
             roles.append(cls(name=name, source=RoleSource.GROUP))
-        
+
         elif strategy == GroupPathStrategy.ALL_SEGMENTS:
             # /web/admin/editor → ["web", "admin", "editor"]
             for segment in segments:
                 name = f"{prefix}{segment}" if prefix else segment
                 roles.append(cls(name=name, source=RoleSource.GROUP))
-        
+
         return roles
 ```
 
@@ -1893,7 +1893,7 @@ class UserClaims(ValueObject):
     email: str
     roles: tuple[AuthRole, ...]  # Merged from realm_roles + groups
     attributes: dict
-    
+
     @classmethod
     def from_keycloak_token(
         cls,
@@ -1904,25 +1904,25 @@ class UserClaims(ValueObject):
     ) -> "UserClaims":
         """
         Parse Keycloak JWT token into UserClaims.
-        
+
         Args:
             decoded: Decoded JWT payload
             merge_groups_as_roles: If True, groups become authorization roles
             group_path_strategy: How to convert group paths to role names
             group_prefix: Optional prefix for group-derived roles
-        
+
         Examples (with group /web/admin/editor):
             FULL_PATH:    roles=["web/admin/editor"]
             LAST_SEGMENT: roles=["editor"]
             ALL_SEGMENTS: roles=["web", "admin", "editor"]
         """
         roles = []
-        
+
         # 1. Realm roles from realm_access
         realm_access = decoded.get("realm_access", {})
         for role_name in realm_access.get("roles", []):
             roles.append(AuthRole(name=role_name, source=RoleSource.REALM_ROLE))
-        
+
         # 2. Client roles from resource_access (optional)
         resource_access = decoded.get("resource_access", {})
         for client, client_data in resource_access.items():
@@ -1931,7 +1931,7 @@ class UserClaims(ValueObject):
                     name=f"{client}:{role_name}",
                     source=RoleSource.CLIENT_ROLE
                 ))
-        
+
         # 3. Groups as roles (if configured)
         if merge_groups_as_roles:
             for group_path in decoded.get("groups", []):
@@ -1941,7 +1941,7 @@ class UserClaims(ValueObject):
                     prefix=group_prefix
                 )
                 roles.extend(group_roles)
-        
+
         return cls(
             sub=decoded["sub"],
             username=decoded.get("preferred_username", decoded["sub"]),
@@ -1949,22 +1949,22 @@ class UserClaims(ValueObject):
             roles=tuple(roles),
             attributes=decoded
         )
-    
+
     @property
     def role_names(self) -> list[str]:
         """All role names regardless of source."""
         return [r.name for r in self.roles]
-    
+
     @property
     def realm_roles(self) -> list[str]:
         """Only realm roles."""
         return [r.name for r in self.roles if r.source == RoleSource.REALM_ROLE]
-    
+
     @property
     def group_roles(self) -> list[str]:
         """Only group-derived roles."""
         return [r.name for r in self.roles if r.source == RoleSource.GROUP]
-    
+
     def has_role(self, role_name: str, source: RoleSource | None = None) -> bool:
         """Check if user has a role, optionally filtered by source."""
         for role in self.roles:
@@ -1985,7 +1985,7 @@ class IdentityProviderConfig:
     client_id: str
     client_secret: str
     verify_ssl: bool = True
-    
+
     # ═══════ GROUP HANDLING ═══════
     merge_groups_as_roles: bool = True                              # Groups become authorization roles
     group_path_strategy: GroupPathStrategy = GroupPathStrategy.FULL_PATH  # Default: preserve hierarchy
@@ -2146,76 +2146,76 @@ class IdentityProviderAdminPort(Protocol):
     Port for administrative identity provider operations.
     Implementations: KeycloakAdminAdapter, Auth0AdminAdapter, etc.
     """
-    
+
     # ═══════ USER CRUD ═══════
     async def create_user(self, user: CreateUserData) -> str:
         """Create user, return user_id."""
         ...
-    
+
     async def get_user(self, user_id: str) -> UserData | None:
         """Get user by ID."""
         ...
-    
+
     async def get_user_by_username(self, username: str) -> UserData | None:
         """Get user by username."""
         ...
-    
+
     async def update_user(self, user_id: str, updates: UpdateUserData) -> None:
         """Update user attributes."""
         ...
-    
+
     async def delete_user(self, user_id: str) -> None:
         """Delete user."""
         ...
-    
+
     async def list_users(self, filters: UserFilters) -> list[UserData]:
         """List users with filters."""
         ...
-    
+
     # ═══════ PASSWORD ═══════
     async def set_password(self, user_id: str, password: str, temporary: bool = False) -> None:
         """Set user password."""
         ...
-    
+
     async def send_password_reset(self, user_id: str) -> None:
         """Trigger password reset email."""
         ...
-    
+
     # ═══════ ROLES ═══════
     async def get_user_roles(self, user_id: str) -> list[RoleData]:
         """Get user's realm roles."""
         ...
-    
+
     async def assign_roles(self, user_id: str, role_names: list[str]) -> None:
         """Assign realm roles to user."""
         ...
-    
+
     async def remove_roles(self, user_id: str, role_names: list[str]) -> None:
         """Remove realm roles from user."""
         ...
-    
+
     # ═══════ GROUPS ═══════
     async def get_user_groups(self, user_id: str) -> list[GroupData]:
         """Get user's groups."""
         ...
-    
+
     async def join_groups(self, user_id: str, group_ids: list[str]) -> None:
         """Add user to groups."""
         ...
-    
+
     async def leave_groups(self, user_id: str, group_ids: list[str]) -> None:
         """Remove user from groups."""
         ...
-    
+
     # ═══════ SYNC ═══════
     async def get_all_roles(self) -> list[RoleData]:
         """Get all realm roles."""
         ...
-    
+
     async def get_all_groups(self) -> list[GroupData]:
         """Get all groups."""
         ...
-    
+
     async def get_all_users(self) -> list[UserData]:
         """Get all users (for sync)."""
         ...
@@ -2229,11 +2229,11 @@ class KeycloakAdminAdapter(IdentityProviderAdminPort):
     Keycloak implementation of admin operations.
     Uses python-keycloak's KeycloakAdmin client.
     """
-    
+
     def __init__(self, config: IdentityProviderConfig):
         self.config = config
         self._admin: KeycloakAdmin | None = None
-    
+
     async def _get_admin(self) -> KeycloakAdmin:
         if not self._admin:
             self._admin = KeycloakAdmin(
@@ -2244,11 +2244,11 @@ class KeycloakAdminAdapter(IdentityProviderAdminPort):
                 verify=self.config.verify_ssl
             )
         return self._admin
-    
+
     async def create_user(self, user: CreateUserData) -> str:
         admin = await self._get_admin()
         loop = asyncio.get_running_loop()
-        
+
         # Create user in Keycloak
         user_id = await loop.run_in_executor(None, lambda: admin.create_user({
             "username": user.username,
@@ -2264,66 +2264,66 @@ class KeycloakAdminAdapter(IdentityProviderAdminPort):
                 "temporary": False
             }]
         }))
-        
+
         # Assign roles if provided
         if user.roles:
             await self.assign_roles(user_id, user.roles)
-        
+
         # Join groups if provided
         if user.groups:
             await self.join_groups(user_id, user.groups)
-        
+
         return user_id
-    
+
     async def assign_roles(self, user_id: str, role_names: list[str]) -> None:
         admin = await self._get_admin()
         loop = asyncio.get_running_loop()
-        
+
         # Get all realm roles to map names to role objects
         all_roles = await loop.run_in_executor(None, admin.get_realm_roles)
         roles_to_assign = [r for r in all_roles if r["name"] in role_names]
-        
+
         if roles_to_assign:
             await loop.run_in_executor(
                 None,
                 lambda: admin.assign_realm_roles(user_id=user_id, roles=roles_to_assign)
             )
-    
+
     async def join_groups(self, user_id: str, group_names: list[str]) -> None:
         admin = await self._get_admin()
         loop = asyncio.get_running_loop()
-        
+
         # Get all groups to map names to IDs
         all_groups = await loop.run_in_executor(None, admin.get_groups)
-        
+
         for group in all_groups:
             if group["name"] in group_names:
                 await loop.run_in_executor(
                     None,
                     lambda g=group: admin.group_user_add(user_id=user_id, group_id=g["id"])
                 )
-    
+
     async def list_users(self, filters: UserFilters) -> list[UserData]:
         admin = await self._get_admin()
         loop = asyncio.get_running_loop()
-        
+
         query = {}
         if filters.search:
             query["search"] = filters.search
         if filters.enabled is not None:
             query["enabled"] = filters.enabled
-        
+
         users = await loop.run_in_executor(
             None,
             lambda: admin.get_users(query)
         )
-        
+
         # Post-filter by role/group if needed
         if filters.role:
             users = [u for u in users if await self._user_has_role(u["id"], filters.role)]
         if filters.group:
             users = [u for u in users if await self._user_in_group(u["id"], filters.group)]
-        
+
         return [UserData.from_keycloak(u) for u in users[filters.offset:filters.offset + filters.limit]]
 ```
 
@@ -2339,7 +2339,7 @@ class CreateUserHandler(CommandHandler):
     Creates a user in the identity provider.
     Optionally triggers ABAC sync for immediate availability.
     """
-    
+
     def __init__(
         self,
         idp_admin: IdentityProviderAdminPort,
@@ -2347,13 +2347,13 @@ class CreateUserHandler(CommandHandler):
     ):
         self.idp = idp_admin
         self.abac = abac_client
-    
+
     async def handle(self, cmd: CreateUser) -> CommandResponse[str]:
         # Validate unique username (optional, IdP will also check)
         existing = await self.idp.get_user_by_username(cmd.username)
         if existing:
             raise DomainError(f"Username '{cmd.username}' already exists")
-        
+
         # Create in IdP
         user_id = await self.idp.create_user(CreateUserData(
             username=cmd.username,
@@ -2367,12 +2367,12 @@ class CreateUserHandler(CommandHandler):
             enabled=cmd.enabled,
             email_verified=cmd.email_verified
         ))
-        
+
         # Optionally trigger ABAC sync for immediate availability
         # Without this, ABAC's background scheduler will sync eventually
         if self.abac:
             await self.abac.realms.sync()
-        
+
         return CommandResponse(
             result=user_id,
             events=[UserCreated(
@@ -2408,7 +2408,7 @@ class SyncIdentityProviderHandler(CommandHandler):
     Syncs roles, groups, and users from IdP to ABAC engine.
     Runs as scheduled background task.
     """
-    
+
     def __init__(
         self,
         idp_admin: IdentityProviderAdminPort,
@@ -2420,19 +2420,19 @@ class SyncIdentityProviderHandler(CommandHandler):
         self.roles = role_repo
         self.principals = principal_repo
         self.config = config
-    
+
     async def handle(self, cmd: SyncIdentityProvider) -> CommandResponse[SyncResult]:
         synced_roles = 0
         synced_groups = 0
         synced_users = 0
-        
+
         # 1. Sync roles
         if cmd.sync_roles:
             roles = await self.idp.get_all_roles()
             for role_data in roles:
                 await self.roles.upsert(AuthRole.from_keycloak_role(role_data))
                 synced_roles += 1
-        
+
         # 2. Sync groups (as roles if configured)
         if cmd.sync_groups and self.config.sync_groups:
             groups = await self.idp.get_all_groups()
@@ -2442,7 +2442,7 @@ class SyncIdentityProviderHandler(CommandHandler):
                     strip_path=self.config.strip_group_path
                 ))
                 synced_groups += 1
-        
+
         # 3. Sync users with role assignments
         if cmd.sync_users:
             users = await self.idp.get_all_users()
@@ -2450,19 +2450,19 @@ class SyncIdentityProviderHandler(CommandHandler):
                 # Get user's roles and groups
                 user_roles = await self.idp.get_user_roles(user_data["id"])
                 user_groups = await self.idp.get_user_groups(user_data["id"]) if self.config.sync_groups else []
-                
+
                 # Merge roles and groups
                 all_roles = [r["name"] for r in user_roles]
                 if self.config.merge_groups_as_roles:
                     all_roles += [g["name"] for g in user_groups]
-                
+
                 await self.principals.upsert(Principal(
                     username=user_data["username"],
                     attributes=user_data.get("attributes", {}),
                     roles=all_roles
                 ))
                 synced_users += 1
-        
+
         return CommandResponse(
             result=SyncResult(
                 synced_roles=synced_roles,
@@ -2507,13 +2507,13 @@ class CheckAccessRequest:
 class AuthorizationPort(Protocol):
     """
     Abstract authorization interface.
-    
+
     Implementations:
     - StatefulABACAdapter (contrib/stateful_abac)
     - SimpleRBACAdapter (permission list-based)
     - ExternalServiceAdapter (for third-party auth services)
     """
-    
+
     async def check_access(
         self,
         principal_id: str,
@@ -2523,18 +2523,18 @@ class AuthorizationPort(Protocol):
     ) -> list[AccessDecision]:
         """
         Check if principal has access to resources.
-        
+
         Args:
             principal_id: User identifier (usually from JWT sub claim)
             requests: List of access check requests
             context: Optional context data (e.g., location, time)
             role_names: Optional role names for the principal
-        
+
         Returns:
             List of access decisions corresponding to requests
         """
         ...
-    
+
     async def get_permitted_resources(
         self,
         principal_id: str,
@@ -2547,7 +2547,7 @@ class AuthorizationPort(Protocol):
         Useful for filtering queries.
         """
         ...
-    
+
     async def get_authorization_filter(
         self,
         principal_id: str,
@@ -2558,14 +2558,14 @@ class AuthorizationPort(Protocol):
     ) -> "AuthorizationFilter":
         """
         Get authorization conditions as a SearchQuery for merging.
-        
+
         This enables single-query authorization: instead of fetching all IDs
         and then filtering via ABAC, the authorization filter is returned as
         a SearchQuery that can be merged with the user's search query.
-        
+
         The adapter fetches JSON condition DSL from ABAC and converts it
         to a SearchQuery using the FieldMapping configured at initialization.
-        
+
         Args:
             principal_id: User identifier
             resource_type: Name of the resource type
@@ -2574,12 +2574,12 @@ class AuthorizationPort(Protocol):
             context: Context data for condition evaluation, structured as:
                      {"principal": {...}, "context": {...}}
                      Used to resolve $principal.* and $context.* references
-        
+
         Returns:
             AuthorizationFilter with authorization SearchQuery and metadata
         """
         ...
-    
+
     async def sync(self) -> None:
         """
         Trigger sync with identity provider (optional).
@@ -2592,7 +2592,7 @@ class AuthorizationPort(Protocol):
 class AuthorizationFilter:
     """
     Result of get_authorization_filter() - contains authorization as SearchQuery.
-    
+
     The SearchQuery can be merged with the user's search query using
     SearchQuery.merge() for single-query authorization.
     """
@@ -2672,11 +2672,11 @@ async with abac_client.connect(token=access_token):
         action="read",
         auth_context={"ip": request.client.host, "location": "POINT(23.7 37.9)"}
     )
-    
+
     # Handle the three filter types
     if auth_filter.denied_all:
         return []  # No access
-    
+
     if auth_filter.granted_all:
         # No authorization filter needed - user has blanket access
         combined = user_query
@@ -2694,7 +2694,7 @@ from cqrs_ddd_auth.contrib.abac_dsl.converter import FieldMapping
 
 class AuthContainer(containers.DeclarativeContainer):
     config = providers.Configuration()
-    
+
     # ABAC SDK client
     abac_client = providers.Singleton(
         StatefulABACClient,
@@ -2702,7 +2702,7 @@ class AuthContainer(containers.DeclarativeContainer):
         base_url=config.abac_url,
         realm=config.realm
     )
-    
+
     # Field mappings per resource type
     document_field_mapping = providers.Singleton(
         FieldMapping,
@@ -2712,7 +2712,7 @@ class AuthContainer(containers.DeclarativeContainer):
         },
         external_id_field='external_id',
     )
-    
+
     element_field_mapping = providers.Singleton(
         FieldMapping,
         mappings={
@@ -2722,26 +2722,26 @@ class AuthContainer(containers.DeclarativeContainer):
         },
         external_id_field='external_id',
     )
-    
+
     # Authorization adapters per resource type
     document_authorization = providers.Singleton(
         StatefulABACAuthorizationAdapter,
         client=abac_client,
         field_mapping=document_field_mapping,
     )
-    
+
     element_authorization = providers.Singleton(
         StatefulABACAuthorizationAdapter,
         client=abac_client,
         field_mapping=element_field_mapping,
     )
-    
+
     # Handlers receive the appropriate adapter
     search_documents_handler = providers.Factory(
         SearchDocumentsHandler,
         authorization=document_authorization,
     )
-    
+
     search_elements_handler = providers.Factory(
         SearchElementsHandler,
         authorization=element_authorization,
@@ -2828,10 +2828,10 @@ class SearchElementsHandler(QueryHandler):
     ):
         self.persistence = persistence
         self.authorization = authorization
-    
+
     async def handle(self, query: SearchElements) -> list[Element]:
         identity = get_identity()
-        
+
         # 1. Get authorization filter (returns SearchQuery)
         auth_filter = await self.authorization.get_authorization_filter(
             principal_id=identity.sub,
@@ -2848,20 +2848,20 @@ class SearchElementsHandler(QueryHandler):
         #         SearchCondition(field="region_id", operator="=", value=5)
         #     ], group_operator="or")
         # ])
-        
+
         # 2. Handle edge cases
         if auth_filter.denied_all:
             return []  # User has no access whatsoever
-        
+
         # 3. Parse user's search query
         user_query = SearchQuery.from_dict(query.filters)
-        
+
         # 4. Merge with authorization (unless blanket access)
         if not auth_filter.granted_all and auth_filter.search_query is not None:
             combined_query = user_query.merge(auth_filter.search_query)
         else:
             combined_query = user_query
-        
+
         # 5. Execute single query - search_query_dsl handles everything
         return await self.persistence.search(combined_query)
 ```
@@ -2876,9 +2876,9 @@ class SearchElementsHandler(QueryHandler):
 | User has resource-level ACLs | `False` | `False` | `SearchQuery` with `external_id IN [...]` |
 | Mixed (conditions + resource ACLs) | `False` | `False` | `SearchQuery` with `conditions OR external_id IN [...]` |
 
-> **Note**: The ABAC engine evaluates `source='principal'` and `source='context'` conditions 
+> **Note**: The ABAC engine evaluates `source='principal'` and `source='context'` conditions
 > server-side before returning. If all conditions evaluate to true, `filter_type='granted_all'`.
-> If any required condition evaluates to false, `filter_type='denied_all'`. Only 
+> If any required condition evaluates to false, `filter_type='denied_all'`. Only
 > `source='resource'` conditions remain in `conditions_dsl` for database-side evaluation.
 
 #### Field Mapping (Simple String Mapping)
@@ -2919,8 +2919,8 @@ The ABAC engine returns authorization conditions as JSON DSL. The condition DSL 
 | `"principal"` | From authenticated principal's attributes (evaluated server-side, resolved before returning) |
 | `"context"` | From runtime `auth_context` passed in the request (evaluated server-side, resolved before returning) |
 
-> **Note**: The ABAC engine evaluates all `source='principal'` and `source='context'` conditions 
-> server-side before returning. Only `source='resource'` conditions remain in `conditions_dsl` 
+> **Note**: The ABAC engine evaluates all `source='principal'` and `source='context'` conditions
+> server-side before returning. Only `source='resource'` conditions remain in `conditions_dsl`
 > for database-side evaluation. This means the `conditions_dsl` you receive is already simplified
 > and contains only conditions that require access to the actual resource rows.
 
@@ -2949,7 +2949,7 @@ The ABAC engine returns authorization conditions as JSON DSL. The condition DSL 
 
 **Value References** (dynamic values):
 - `$resource.attr_name` - Reference resource attribute
-- `$principal.attr_name` - Reference principal attribute  
+- `$principal.attr_name` - Reference principal attribute
 - `$context.attr_name` - Reference auth_context value
 
 **Nested Condition Example**:
@@ -3009,7 +3009,7 @@ async with client.connect(token=access_token):
         auth_context={"ip": "10.0.0.5", "location": "POINT(23.7 37.9)"},  # Optional
         role_names=["admin"]  # Optional: override active roles
     )
-    
+
     # result.filter_type: "granted_all" | "denied_all" | "conditions"
     # result.conditions_dsl: dict | None (only source='resource' conditions remain)
     # result.has_context_refs: bool (whether original had $context.* or $principal.* refs)
@@ -3025,13 +3025,13 @@ async with client.connect():
 ```
 
 > **Note**: The ABAC engine evaluates all `source='principal'` and `source='context'` conditions
-> server-side, resolving `$context.*` and `$principal.*` references to actual values. Only 
+> server-side, resolving `$context.*` and `$principal.*` references to actual values. Only
 > `source='resource'` conditions remain in `conditions_dsl`. If all conditions evaluate to true,
 > `filter_type='granted_all'`. If any required condition evaluates to false, `filter_type='denied_all'`.
 
 #### Application-Side Converter (Simplified)
 
-The converter is much simpler since context/principal resolution happens server-side. 
+The converter is much simpler since context/principal resolution happens server-side.
 It only does field name remapping:
 
 ```python
@@ -3046,9 +3046,9 @@ from search_query_dsl.core.models import SearchQuery, SearchQueryGroup, SearchCo
 class FieldMapping:
     """
     Maps ABAC attribute names to search_query_dsl field names.
-    
+
     This is application-specific and registered once at startup.
-    
+
     Args:
         mappings: Dict mapping ABAC attr names to DSL field names
         external_id_field: DSL field name for external_id (default: "external_id")
@@ -3059,11 +3059,11 @@ class FieldMapping:
     mappings: dict[str, str] = field(default_factory=dict)
     external_id_field: str = "external_id"
     external_id_cast: Callable[[Any], Any] = str  # Cast function for external_id values
-    
+
     def get_field(self, abac_attr: str) -> str:
         """Get the DSL field name for an ABAC attribute."""
         return self.mappings.get(abac_attr, abac_attr)
-    
+
     def cast_external_id(self, val: Any) -> Any:
         """Cast an external_id value using the configured cast function."""
         if isinstance(val, list):
@@ -3074,13 +3074,13 @@ class FieldMapping:
 class ABACConditionConverter:
     """
     Converts ABAC JSON condition DSL to SearchQuery.
-    
-    Since the ABAC engine now evaluates all $context.* and $principal.* 
+
+    Since the ABAC engine now evaluates all $context.* and $principal.*
     references server-side, this converter only needs to:
     1. Remap ABAC attribute names to application field names
     2. Convert the DSL structure to SearchQuery objects
     """
-    
+
     OPERATOR_MAP = {
         '=': '=',
         '==': '=',
@@ -3100,41 +3100,41 @@ class ABACConditionConverter:
         'st_contains': 'contains',
         'st_within': 'within',
     }
-    
+
     def __init__(self, field_mapping: FieldMapping):
         self.mapping = field_mapping
-    
+
     def convert(self, conditions_dsl: dict) -> SearchQuery:
         """
         Convert ABAC conditions JSON to SearchQuery.
-        
+
         Args:
             conditions_dsl: The JSON condition DSL from ABAC (already resolved)
-            
+
         Returns:
             SearchQuery ready for merging with user query
         """
         if conditions_dsl is None:
             return SearchQuery()
-        
+
         group = self._convert_node(conditions_dsl)
-        
+
         if isinstance(group, SearchQueryGroup):
             return SearchQuery(groups=[group])
         elif isinstance(group, SearchCondition):
             return SearchQuery(groups=[SearchQueryGroup(conditions=[group])])
         else:
             return SearchQuery()
-    
+
     def _convert_node(self, node: dict) -> SearchQueryGroup | SearchCondition:
         """Recursively convert a condition node."""
         op = node.get('op', '').lower()
-        
+
         # Compound operators → SearchQueryGroup
         if op in ('and', 'or'):
             conditions = [self._convert_node(c) for c in node.get('conditions', [])]
             return SearchQueryGroup(conditions=conditions, group_operator=op)
-        
+
         if op == 'not':
             inner = node.get('conditions', [])
             if inner:
@@ -3143,30 +3143,30 @@ class ABACConditionConverter:
                     group_operator='not'
                 )
             return SearchQueryGroup()
-        
+
         # Leaf operators → SearchCondition
         attr = node.get('attr', '')
         val = node.get('val')
         args = node.get('args')
-        
+
         # Remap field name (only resource attributes reach here after server-side evaluation)
         field = self.mapping.get_field(attr)
-        
+
         # Cast external_id values to configured type
         if attr == 'external_id':
             field = self.mapping.external_id_field
             val = self.mapping.cast_external_id(val)
-        
+
         # Map operator
         dsl_op = self.OPERATOR_MAP.get(op, op)
-        
+
         # Handle spatial operators with args
         value_type = None
         if op.startswith('st_'):
             value_type = 'geometry'
             if op == 'st_dwithin' and args is not None:
                 val = {'geometry': val, 'distance': args}
-        
+
         return SearchCondition(
             field=field,
             operator=dsl_op,
@@ -3187,24 +3187,24 @@ from search_query_dsl.core.models import SearchQuery
 class StatefulABACAuthorizationAdapter(AuthorizationPort):
     """
     Stateful ABAC adapter that converts conditions to SearchQuery.
-    
+
     The ABAC engine handles all the complexity:
     - Evaluates source='principal' and source='context' conditions server-side
     - Resolves $context.* and $principal.* references
     - Merges resource-level ACLs into conditions_dsl as IN clauses
-    
+
     This adapter just converts the returned DSL to SearchQuery.
     """
-    
+
     def __init__(
-        self, 
+        self,
         client: StatefulABACClient,
         field_mapping: FieldMapping,
     ):
         self.client = client
         self.field_mapping = field_mapping
         self.converter = ABACConditionConverter(field_mapping)
-    
+
     async def get_authorization_filter(
         self,
         principal_id: str,
@@ -3215,7 +3215,7 @@ class StatefulABACAuthorizationAdapter(AuthorizationPort):
     ) -> AuthorizationFilter:
         """
         Get authorization filter as SearchQuery.
-        
+
         The ABAC engine evaluates all evaluable conditions server-side.
         Only source='resource' conditions remain for database-side evaluation.
         """
@@ -3225,13 +3225,13 @@ class StatefulABACAuthorizationAdapter(AuthorizationPort):
             auth_context=auth_context,
             role_names=role_names,
         )
-        
+
         if result.filter_type == "granted_all":
             return AuthorizationFilter(granted_all=True)
-        
+
         if result.filter_type == "denied_all":
             return AuthorizationFilter(denied_all=True)
-        
+
         # Convert conditions DSL to SearchQuery
         # The DSL already contains merged resource-level ACLs as external_id IN clauses
         if result.conditions_dsl:
@@ -3239,7 +3239,7 @@ class StatefulABACAuthorizationAdapter(AuthorizationPort):
         else:
             # No conditions - shouldn't happen with filter_type='conditions'
             return AuthorizationFilter(denied_all=True)
-        
+
         return AuthorizationFilter(
             search_query=search_query,
             has_context_refs=result.has_context_refs,
@@ -3259,12 +3259,12 @@ from search_query_dsl.core.models import SearchQuery
 class ProductSearchPersistence(SQLAlchemyQueryPersistence[ProductSearchDto]):
     model_class = ProductModel
     dto_class = ProductSearchDto
-    
+
     def __init__(self, authorization: StatefulABACAuthorizationAdapter):
         self.authorization = authorization
-    
+
     async def search(
-        self, 
+        self,
         user_query: SearchQuery,
         identity: UserIdentity,
         unit_of_work: Any,
@@ -3280,26 +3280,26 @@ class ProductSearchPersistence(SQLAlchemyQueryPersistence[ProductSearchDto]):
             action="read",
             auth_context={"department": identity.department, "ip": request.client.host}
         )
-        
+
         if auth_filter.denied_all:
             return []
-        
+
         # Merge authorization into user query
         if auth_filter.granted_all:
             combined_query = user_query
         else:
             combined_query = user_query.merge(auth_filter.search_query)
-        
+
         # Execute via search_query_dsl
         from search_query_dsl.api import search
         session = unit_of_work.session
-        
+
         results = await search(
-            combined_query.to_dict(), 
-            session, 
+            combined_query.to_dict(),
+            session,
             model=self.model_class
         )
-        
+
         return [self.to_dto(row) for row in results]
 ```
 
@@ -3329,7 +3329,7 @@ class ProductSearchPersistence(SQLAlchemyQueryPersistence[ProductSearchDto]):
 
 ### 11.7 Integration with search_query_dsl
 
-The `search_query_dsl` library provides a JSON-based DSL for building database queries. 
+The `search_query_dsl` library provides a JSON-based DSL for building database queries.
 With the new `SearchQuery.merge()` method, integration becomes simple and elegant.
 
 #### The Key Insight: SearchQuery.merge()
@@ -3344,11 +3344,11 @@ class SearchQuery:
     limit: Optional[int] = None
     offset: Optional[int] = None
     order_by: Optional[List[str]] = None
-    
+
     def merge(self, other: "SearchQuery") -> "SearchQuery":
         """
         Merge another SearchQuery into this one using AND logic.
-        
+
         Both queries' groups are combined. Since groups are ANDed together,
         this effectively creates: (self conditions) AND (other conditions).
         """
@@ -3430,12 +3430,12 @@ authorization = StatefulABACAuthorizationAdapter(
 class SearchElements(Query):
     """Search elements with authorization."""
     filters: dict  # User's search query as dict
-    
+
 
 class SearchElementsHandler(QueryHandler):
     """
     Handler that combines search_query_dsl with SearchQuery.merge() for authorization.
-    
+
     This is the simplest and most elegant approach:
     - ABAC evaluates principal/context conditions server-side
     - Remaining conditions are converted to SearchQuery
@@ -3443,7 +3443,7 @@ class SearchElementsHandler(QueryHandler):
     - Both are merged with AND semantics
     - search_query_dsl backend handles all SQL compilation
     """
-    
+
     def __init__(
         self,
         authorization: StatefulABACAuthorizationAdapter,
@@ -3451,15 +3451,15 @@ class SearchElementsHandler(QueryHandler):
     ):
         self.authorization = authorization
         self.session = session
-    
+
     async def handle(self, query: SearchElements) -> list[ElementDTO]:
         from cqrs_ddd_auth.context import get_identity
-        
+
         identity = get_identity()
-        
+
         # Step 1: Parse user's search query
         user_query = SearchQuery.from_dict(query.filters)
-        
+
         # Step 2: Get authorization filter
         # auth_context is sent to ABAC for server-side evaluation
         auth_filter = await self.authorization.get_authorization_filter(
@@ -3470,17 +3470,17 @@ class SearchElementsHandler(QueryHandler):
         )
         # The returned auth_filter.search_query only contains source='resource' conditions
         # All $principal.* and $context.* references have been resolved server-side
-        
+
         # Step 3: Handle edge cases
         if auth_filter.denied_all:
             return []  # User has no access
-        
+
         # Step 4: Merge queries (unless blanket access)
         if auth_filter.granted_all:
             combined_query = user_query
         else:
             combined_query = user_query.merge(auth_filter.search_query)
-        
+
         # Step 5: Execute via search_query_dsl
         # The backend handles all SQL compilation with proper column mapping
         results = await search(
@@ -3488,7 +3488,7 @@ class SearchElementsHandler(QueryHandler):
             self.session,
             model=Element,
         )
-        
+
         return [ElementDTO.from_model(r) for r in results]
 ```
 
@@ -3544,7 +3544,7 @@ User: GET /api/elements?status=active&page=1
 
 #### Flow with External IDs (Resource-Level ACLs)
 
-When users have resource-level ACLs (permissions on specific resources), the flow 
+When users have resource-level ACLs (permissions on specific resources), the flow
 includes external IDs:
 
 ```
@@ -3565,7 +3565,7 @@ User: GET /api/documents?status=published&page=1
        {"op": "in", "source": "resource", "attr": "external_id", "val": ["doc-123", "doc-456", "doc-789"]}
      ]
    }
-   
+
    The user can access:
    a) Any document where department = "engineering" (type-level condition)
    b) Specific documents: doc-123, doc-456, doc-789 (resource-level grants merged as IN clause)
@@ -3575,7 +3575,7 @@ User: GET /api/documents?status=published&page=1
        SearchQueryGroup(
            conditions=[
                SearchCondition(field="dept", operator="=", value="engineering"),
-               SearchCondition(field="external_id", operator="in", 
+               SearchCondition(field="external_id", operator="in",
                               value=["doc-123", "doc-456", "doc-789"])
            ],
            group_operator="or"  # Type-level condition OR resource-level IDs
@@ -3590,7 +3590,7 @@ User: GET /api/documents?status=published&page=1
        SearchQueryGroup(              # Authorization filter (from conditions_dsl)
            conditions=[
                SearchCondition(field="dept", operator="=", value="engineering"),
-               SearchCondition(field="external_id", operator="in", 
+               SearchCondition(field="external_id", operator="in",
                               value=["doc-123", "doc-456", "doc-789"])
            ],
            group_operator="or"
@@ -3620,14 +3620,14 @@ User: GET /api/confidential-reports?year=2025
 
 1. ABAC returns conditions_dsl (resource-level only, merged as IN clause):
    {"op": "in", "source": "resource", "attr": "external_id", "val": ["report-001", "report-002"]}
-   
+
 2. AuthorizationFilter:
    AuthorizationFilter(
        granted_all=False,
        denied_all=False,
        search_query=SearchQuery(groups=[
            SearchQueryGroup(conditions=[
-               SearchCondition(field="external_id", operator="in", 
+               SearchCondition(field="external_id", operator="in",
                               value=["report-001", "report-002"])
            ])
        ]),
@@ -3653,13 +3653,13 @@ The pattern integrates naturally with the toolkit's persistence layer:
 class ProductSearchPersistence(SQLAlchemyQueryPersistence[ProductSearchDto]):
     model_class = ProductModel
     dto_class = ProductSearchDto
-    
+
     def __init__(self, authorization: StatefulABACAuthorizationAdapter):
         self.authorization = authorization
-    
+
     async def fetch(
-        self, 
-        queries: List[dict], 
+        self,
+        queries: List[dict],
         unit_of_work: Any,
     ) -> List[ProductSearchDto]:
         """
@@ -3667,39 +3667,39 @@ class ProductSearchPersistence(SQLAlchemyQueryPersistence[ProductSearchDto]):
         """
         if not queries:
             return []
-        
+
         from cqrs_ddd_auth.context import get_identity
         identity = get_identity()
-        
+
         # Parse user query
         user_query = SearchQuery.from_dict(queries[0])
-        
+
         # Get authorization as SearchQuery
         auth_filter = await self.authorization.get_authorization_filter(
             principal_id=identity.sub,
             resource_type="product",
             action="read",
         )
-        
+
         if auth_filter.denied_all:
             return []
-        
+
         # Merge authorization into user query
         if auth_filter.granted_all:
             combined_query = user_query
         else:
             combined_query = user_query.merge(auth_filter.search_query)
-        
+
         # Execute via search_query_dsl
         from search_query_dsl.api import search
         session = unit_of_work.session
-        
+
         results = await search(
-            combined_query.to_dict(), 
-            session, 
+            combined_query.to_dict(),
+            session,
             model=self.model_class
         )
-        
+
         return [self.to_dto(row) for row in results]
 ```
 
@@ -3971,4 +3971,3 @@ Tracks what has been implemented in the `stateful-abac-policy-engine` project.
            role_names=["admin"]  # Optional: override active roles
        )
    ```
-

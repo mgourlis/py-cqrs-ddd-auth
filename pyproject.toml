@@ -29,6 +29,7 @@ classifiers = [
 # Core dependencies
 dependencies = [
     "py-cqrs-ddd-toolkit @ git+ssh://git@github.com/mgourlis/py-cqrs-ddd-toolkit.git",
+    "search_query_dsl @ git+ssh://git@github.com/mgourlis/search_query_dsl.git",
     "stateful-abac-common @ git+ssh://git@github.com/mgourlis/stateful-abac-policy-engine.git#subdirectory=common",
     "stateful-abac-sdk[db] @ git+ssh://git@github.com/mgourlis/stateful-abac-policy-engine.git#subdirectory=python-sdk",
     "pyotp>=2.9.0",  # TOTP/HOTP for 2FA
@@ -54,8 +55,9 @@ dev = [
     "pytest>=7.0",
     "pytest-asyncio>=0.21",
     "pytest-cov>=4.1",
-    "mypy>=1.0",
     "httpx>=0.25",
+    "ruff>=0.1.0",
+    "pre-commit>=3.5.0",
 ]
 all = [
     "py-cqrs-ddd-auth[keycloak,fastapi,django,dev,di]",
@@ -73,9 +75,17 @@ allow-direct-references = true
 packages = ["src/cqrs_ddd_auth"]
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+pythonpath = ["src"]
 addopts = "--cov=src/cqrs_ddd_auth --cov-report=term-missing"
+
+[tool.ruff]
+line-length = 88
+target-version = "py310"
 
 [tool.mypy]
 python_version = "3.10"

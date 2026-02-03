@@ -254,29 +254,37 @@ Implement the ABAC SDK client adapter for authorization.
    - `ABACClientConfig` - Configuration for ABAC client
      - `mode`: "http" or "db" (for different deployment scenarios)
      - `base_url`: API endpoint for HTTP mode
-     - `database_url`: Connection string for DB mode
      - `realm`: ABAC realm name
+     - `from_env`: Load config from environment variables
      - Caching options for resource types and actions
    - `StatefulABACAdapter` implements `ABACAuthorizationPort`
      - `check_access()` - Check if user can access specific resources
+     - `check_access_batch()` - Batch check with `external_resource_ids` (pre-formatted by caller)
      - `get_permitted_actions()` - Get allowed actions per resource
+     - `get_permitted_actions_batch()` - Batch get with `id` from AggregateRoot (normalized to strings)
      - `list_resource_types()` - List available resource types (cached)
      - `list_actions()` - List actions for a resource type (cached)
      - `get_type_level_permissions()` - Get type-level permissions for UI
      - `get_authorization_conditions()` - Get conditions for single-query auth
      - `sync_from_idp()` - Trigger IdP sync
      - Async context manager support
+     - All methods accept `auth_context` and `role_names` parameters
 
-2. `src/cqrs_ddd_auth/adapters/__init__.py` (updated)
-   - Added optional exports for `StatefulABACAdapter`, `ABACClientConfig`
-   - Uses try/except for optional `stateful-abac-sdk` dependency
+2. `src/cqrs_ddd_auth/ports/authorization.py`
+   - `ABACAuthorizationPort` - Protocol for ABAC authorization
+   - `AuthorizationConditionsResult` - Result for single-query authorization
+   - `CheckAccessBatchResult` - Result for batch access checks with `is_allowed()` helper
+
+3. `src/cqrs_ddd_auth/adapters/__init__.py` (updated)
+   - Exports `StatefulABACAdapter`, `ABACClientConfig` (required dependency)
 
 **Integration Notes:**
-- Uses `stateful-abac-sdk` package (optional dependency)
+- Uses `stateful-abac-sdk` package (required dependency)
+- Uses `StatefulABACClientFactory.create()` or `.from_env()` for client initialization
 - Passes `access_token` via `set_token()` for role extraction
 - Supports dual mode:
   - HTTP mode: REST API calls (standard deployment)
-  - DB mode: Direct SQL (10-100x faster for co-located services)
+  - DB mode: Direct SQL via common.core.database (10-100x faster for co-located services)
 - Caches resource types and actions for performance
 
 **Usage Example:**
@@ -294,7 +302,7 @@ adapter = StatefulABACAdapter(config)
 # Check access
 async with adapter:
     adapter.set_token(access_token)
-    
+
     # Check specific resource access
     allowed_ids = await adapter.check_access(
         access_token=token,
@@ -302,14 +310,14 @@ async with adapter:
         resource_type="document",
         resource_ids=["doc-1", "doc-2"],
     )
-    
+
     # Get type-level permissions for UI
     permissions = await adapter.get_type_level_permissions(
         access_token=token,
         resource_types=["document", "user", "report"],
     )
     # {"document": ["read", "create"], "user": ["read"], "report": []}
-    
+
     # Get authorization conditions for single-query auth
     conditions = await adapter.get_authorization_conditions(
         access_token=token,
@@ -329,25 +337,116 @@ async with adapter:
 
 ---
 
-## Step 13: AuthorizationMiddleware (CQRS)
+## Step 13: [DONE] AuthorizationMiddleware (CQRS)
 
 Implement CQRS middleware for fine-grained authorization checks.
 
-**Files to create:**
-1. `src/cqrs_ddd_auth/middleware/authorization.py`
-   - `AuthorizationMiddleware` - Pre/post execution authorization
-     - Pre-check: Validate before handler runs
-     - Post-filter: Filter results based on permissions
-   - `PermittedActionsMiddleware` - Enrich results with allowed actions
+**Files created:**
+1. `src/cqrs_ddd_auth/middleware/__init__.py`
+   - Package exports for middleware module
 
-**Usage:**
+2. `src/cqrs_ddd_auth/middleware/authorization.py`
+   - `AuthorizationConfig` - Configuration dataclass with:
+     - `resource_type`: ABAC resource type to check
+     - `required_actions`: Actions required for access
+     - `quantifier`: "all" or "any" for combining actions
+     - `resource_id_attr`: Attribute path for extracting resource IDs from message
+     - `result_entities_attr`: Attribute path for post-filtering result entities
+     - `entity_id_attr`: Attribute on entities containing their ID (default: "id")
+     - `auth_context_provider`: Optional callable for auth_context
+     - `fail_silently`: Filter instead of raise on failure
+     - `deny_anonymous`: Immediately deny anonymous users without calling ABAC
+       - Default: False (let ABAC decide - handles public resources, anonymous policies)
+       - Set True only if you know the resource never allows anonymous access
+   - `AuthorizationMiddleware` - Pre/post execution authorization
+     - Pre-check: Type-level or resource-level access validation
+     - Post-filter: Filter result entities based on permissions
+     - Uses `check_access()` and `get_type_level_permissions()` from ABAC port
+     - Anonymous users (no token) are passed to ABAC which handles public resources
+   - `PermittedActionsConfig` - Configuration for permitted actions enrichment
+   - `PermittedActionsMiddleware` - Enrich results with allowed actions per entity
+     - Adds `permitted_actions` attribute to each entity
+     - Uses `get_permitted_actions()` from ABAC port
+   - `AuthorizationError` - Exception for authorization failures
+   - `authorize()` - Convenience function for creating AuthorizationConfig
+   - `permitted_actions()` - Convenience function for creating PermittedActionsConfig
+   - `register_abac_middleware()` - Register ABAC middleware into toolkit's MiddlewareRegistry
+
+3. `src/cqrs_ddd_auth/__init__.py` (updated)
+   - Exports middleware classes, configs, and convenience functions
+
+**Usage - Option 1: Direct with `@middleware.apply()`**
 ```python
-@middleware.authorize(
-    resource_type="element",
-    required_permissions=["view"],
+from cqrs_ddd.middleware import middleware
+from cqrs_ddd_auth.middleware import AuthorizationMiddleware, AuthorizationConfig
+
+@middleware.apply(
+    AuthorizationMiddleware,
+    config=AuthorizationConfig(
+        resource_type="document",
+        required_actions=["read"],
+        result_entities_attr="items",
+    ),
+    authorization_port=abac_adapter,
 )
-class GetElementHandler(QueryHandler):
-    ...
+class ListDocumentsHandler:
+    async def handle(self, query: ListDocuments) -> ListDocumentsResult:
+        ...
+```
+
+**Usage - Option 2: Register into MiddlewareRegistry**
+```python
+from cqrs_ddd.middleware import middleware
+from cqrs_ddd_auth.middleware import register_abac_middleware
+
+# At application startup - register once
+register_abac_middleware(abac_adapter)
+
+# Then use standard decorator throughout the codebase
+@middleware.authorize(
+    resource_type="document",
+    required_actions=["read"],
+    result_entities_attr="items",
+)
+class ListDocumentsHandler:
+    async def handle(self, query: ListDocuments) -> ListDocumentsResult:
+        ...
+```
+
+**Usage - PermittedActionsMiddleware:**
+
+*Option 1: Direct with `@middleware.apply()`*
+```python
+from cqrs_ddd.middleware import middleware
+from cqrs_ddd_auth.middleware import PermittedActionsMiddleware, PermittedActionsConfig
+
+@middleware.apply(
+    PermittedActionsMiddleware,
+    config=PermittedActionsConfig(
+        resource_type="document",
+        result_entities_attr="items",
+    ),
+    authorization_port=abac_adapter,
+)
+class ListDocumentsHandler:
+    async def handle(self, query: ListDocuments) -> ListDocumentsResult:
+        ...
+    # Each item will have: item.permitted_actions = ["read", "update", ...]
+```
+
+*Option 2: Register into MiddlewareRegistry (with `register_abac_middleware`)*
+```python
+from cqrs_ddd.middleware import middleware
+
+# Provided register_abac_middleware(abac_adapter) was called at startup
+
+@middleware.permitted_actions(
+    resource_type="document",
+    result_entities_attr="items",
+)
+class ListDocumentsHandler:
+    async def handle(self, query: ListDocuments) -> ListDocumentsResult:
+        ...
 ```
 
 ---
@@ -406,7 +505,7 @@ claims.has_role("web")     # ✓
 
 ---
 
-## Step 15: Authentication Saga (Step-Up Auth)
+## Step 15: [DONE] Authentication Saga (Step-Up Auth)
 
 Implement saga for multi-step step-up authentication.
 
@@ -426,7 +525,7 @@ Implement saga for multi-step step-up authentication.
 
 ---
 
-## Step 16: Communication Ports (Email/SMS)
+## Step 16: [DONE] Communication Ports (Email/SMS)
 
 Define ports for OTP delivery mechanisms.
 
@@ -441,7 +540,7 @@ Define ports for OTP delivery mechanisms.
 
 ---
 
-## Step 17: Session Management Commands
+## Step 17: [DONE] Session Management Commands
 
 Implement commands for session lifecycle management.
 
@@ -460,7 +559,7 @@ Implement commands for session lifecycle management.
 
 ---
 
-## Step 18: SQLAlchemy Repositories
+## Step 18: [DONE] SQLAlchemy Repositories
 
 Implement persistent storage with SQLAlchemy.
 
@@ -477,7 +576,7 @@ Implement persistent storage with SQLAlchemy.
 
 ---
 
-## Step 19: SendOTPChallenge Command
+## Step 19: [DONE] SendOTPChallenge Command
 
 Implement OTP challenge sending for email/SMS methods.
 
@@ -493,25 +592,12 @@ Implement OTP challenge sending for email/SMS methods.
 
 ---
 
-## Step 20: PermittedActionsMiddleware
+## Step 20: [DONE] PermittedActionsMiddleware
 
-Enrich query results with per-entity permitted actions.
+*Implemented as part of Step 13 (AuthorizationMiddleware)*
 
-**Files to create:**
-1. `src/cqrs_ddd_auth/middleware/permitted_actions.py`
-   - `PermittedActionsMiddleware`
-     - After query handler runs, fetches permitted actions per entity
-     - Attaches `permitted_actions` attribute to each result
-
-**Usage:**
-```python
-@middleware.permitted_actions(
-    result_entities_attr="items",
-    resource_type="document",
-)
-class ListDocumentsHandler(QueryHandler):
-    ...
-```
+See Step 13 for full implementation details. The `PermittedActionsMiddleware` is included
+in `src/cqrs_ddd_auth/middleware/authorization.py`.
 
 ---
 
@@ -710,65 +796,171 @@ Implement queries for user listing, details, and authorization info.
 
 ---
 
-## Step 23: ABAC Filter Integration (search_query_dsl)
+## Step 23: [DONE] ABAC Filter Integration (search_query_dsl)
 
 Implement authorization filter for single-query authorization.
 
-**Files to create:**
-1. `src/cqrs_ddd_auth/contrib/abac_dsl/converter.py`
-   - `FieldMapping` - Maps ABAC attributes to DSL field names
-   - `ABACConditionConverter` - Converts JSON DSL to `SearchQuery`
-   - Operator mapping: `st_dwithin` → `dwithin`, etc.
+**Files created:**
+1. `src/cqrs_ddd_auth/contrib/search_query_dsl/__init__.py`
+   - Package exports for ABAC filter integration
 
-2. `src/cqrs_ddd_auth/contrib/stateful_abac/adapter.py`
-   - `StatefulABACAuthorizationAdapter` implements `AuthorizationPort`
-     - `get_authorization_filter()` → Returns `AuthorizationFilter`
-     - `check_access()` - Traditional ID-based check
-     - `sync()` - Trigger IdP sync
+2. `src/cqrs_ddd_auth/contrib/search_query_dsl/filter.py`
+   - `AuthorizationFilter` - Result type with granted_all, denied_all, search_query
+     - `has_filter` property - True if search_query should be applied
+     - `__bool__` - Quick access check (True if access possible)
+
+3. `src/cqrs_ddd_auth/contrib/search_query_dsl/converter.py`
+   - `FieldMapping` - Maps ABAC attribute names to DSL field names
+     - `mappings`: Dict of ABAC attr → DSL field
+     - `external_id_field`: Field name for external_id (default: "external_id")
+     - `external_id_cast`: Callable to cast IDs (int, str, UUID, etc.)
+   - `ABACConditionConverter` - Converts JSON DSL to SearchQuery
+     - `convert()`: Convert conditions_dsl dict to SearchQuery
+     - `convert_result()`: Convert AuthorizationConditionsResult to AuthorizationFilter
+     - Operator mapping: st_dwithin → dwithin, st_intersects → intersects, etc.
+
+4. `src/cqrs_ddd_auth/adapters/abac.py` (modified)
+   - Added `get_authorization_filter()` - Convenience method that combines
+     `get_authorization_conditions()` with `ABACConditionConverter`
+
+5. `src/cqrs_ddd_auth/contrib/__init__.py` (updated)
+   - Added conditional exports for search_query_dsl integration
 
 **Key pattern:**
 ```python
-# Get authorization as SearchQuery
-auth_filter = await authorization.get_authorization_filter(...)
+from cqrs_ddd_auth.contrib.search_query_dsl import (
+    FieldMapping,
+    ABACConditionConverter,
+    AuthorizationFilter,
+)
 
-# Merge with user query
-if not auth_filter.granted_all:
-    combined = user_query.merge(auth_filter.search_query)
+# Configure field mapping (once at startup)
+mapping = FieldMapping(
+    mappings={"owner_id": "created_by_id"},
+    external_id_field="id",
+    external_id_cast=int,
+)
+
+# Option 1: Use adapter convenience method
+auth_filter = await abac_adapter.get_authorization_filter(
+    access_token=token,
+    resource_type="document",
+    action="read",
+    field_mapping=mapping,
+)
+
+# Option 2: Use converter manually
+result = await abac_adapter.get_authorization_conditions(...)
+converter = ABACConditionConverter(mapping)
+auth_filter = converter.convert_result(result)
+
+# Apply authorization filter
+if not auth_filter:  # __bool__ returns False if denied_all
+    return []  # No access
+
+if auth_filter.granted_all:
+    query = user_query  # No filtering needed
+else:
+    query = user_query.merge(auth_filter.search_query)
+
+# Execute query
+results = await repository.search(query)
+```
+
+**ABAC DSL to SearchQuery mapping:**
+| ABAC Operator | search_query_dsl Operator |
+|---------------|---------------------------|
+| =, == | = |
+| !=, <> | != |
+| <, >, <=, >= | <, >, <=, >= |
+| in, not_in | in, not_in |
+| like, ilike | like, ilike |
+| is_null, is_not_null | is_null, is_not_null |
+| st_intersects | intersects |
+| st_dwithin | dwithin |
+| st_contains | contains |
+| st_within | within |
+
+---
+
+## Step 24: [DONE] ABAC SDK Dual Mode Support
+
+*Implemented as part of Step 12 (ABAC Authorization Port).*
+
+The `StatefulABACAdapter` already supports both HTTP and DB modes via `ABACClientConfig.mode`.
+See Step 12 for configuration details.
+
+---
+
+## Step 25: [DONE] Identity Sync Command
+
+Implement scheduled sync of IdP data to ABAC cache with automatic event-driven triggers.
+
+**Files created:**
+1. `src/cqrs_ddd_auth/application/sync_commands.py`
+   - `SyncIdentityProvider` Command - Trigger sync
+   - `SyncIdentityProviderHandler` - Uses ABAC engine's built-in sync
+   - `SyncResult` - Result with stats, status, and timing
+   - `SyncStats` - Counts for users, roles, groups synced/failed
+   - `SyncStatus` - Enum: SUCCESS, PARTIAL, FAILED
+
+2. `src/cqrs_ddd_auth/application/event_handlers.py`
+   - `IdentityChangeSyncHandler` - Event handler that triggers ABAC sync
+   - `register_identity_sync_handlers()` - Convenience function to register handlers
+
+3. `src/cqrs_ddd_auth/domain/events.py` (updated)
+   - `IdentityChanged` - Base event for identity changes
+   - `UserCreatedInIdP` - User created in IdP
+   - `UserUpdatedInIdP` - User updated in IdP
+   - `UserDeletedInIdP` - User deleted from IdP
+   - `UserRolesAssigned` - Roles assigned to user
+   - `UserRolesRemoved` - Roles removed from user
+   - `UserAddedToGroups` - User added to groups
+   - `UserRemovedFromGroups` - User removed from groups
+
+4. `src/cqrs_ddd_auth/application/handlers.py` (updated)
+   - `CreateUserHandler` - Emits `UserCreatedInIdP`
+   - `UpdateUserHandler` - Emits `UserUpdatedInIdP`
+   - `DeleteUserHandler` - Emits `UserDeletedInIdP`
+   - `AssignRolesHandler` - Emits `UserRolesAssigned`
+   - `RemoveRolesHandler` - Emits `UserRolesRemoved`
+   - `AddToGroupsHandler` - Emits `UserAddedToGroups`
+   - `RemoveFromGroupsHandler` - Emits `UserRemovedFromGroups`
+
+   Note: `SetUserPasswordHandler`, `SendPasswordResetHandler`, `SendVerifyEmailHandler`
+   do NOT emit events (password changes don't affect ABAC principal data).
+
+**Usage Example:**
+```python
+from cqrs_ddd.dispatcher import EventDispatcher
+from cqrs_ddd_auth.application import (
+    SyncIdentityProvider,
+    SyncIdentityProviderHandler,
+    register_identity_sync_handlers,
+)
+
+# === Option 1: Scheduled sync ===
+handler = SyncIdentityProviderHandler(abac_adapter=abac_adapter)
+result = await handler.handle(SyncIdentityProvider())
+print(f"Synced {result.result.stats.total_synced} items")
+
+# === Option 2: Event-driven sync (recommended) ===
+# Register handlers with event dispatcher
+dispatcher = EventDispatcher()
+register_identity_sync_handlers(dispatcher, abac_adapter)
+
+# Now when user management commands are executed, events are emitted
+# and the IdentityChangeSyncHandler triggers ABAC sync automatically.
+# Example flow:
+#   CreateUserHandler.handle() -> UserCreatedInIdP event
+#   -> dispatcher.dispatch_background(event)
+#   -> IdentityChangeSyncHandler.handle(event)
+#   -> abac_adapter.sync_from_idp()
 ```
 
 ---
 
-## Step 24: ABAC SDK Dual Mode Support
-
-Support both HTTP and DB modes for the ABAC SDK client.
-
-**Files to modify:**
-1. `src/cqrs_ddd_auth/contrib/stateful_abac/adapter.py`
-   - HTTP mode: REST API calls (standard deployment)
-   - DB mode: Direct SQL (10-100x faster for co-located services)
-
-2. `src/cqrs_ddd_auth/contrib/dependency_injector.py`
-   - `ABACClientFactory` with mode configuration
-   - Environment-based mode selection
-
----
-
-## Step 25: Identity Sync Command
-
-Implement scheduled sync of IdP data to ABAC cache.
-
-**Files to create:**
-1. `src/cqrs_ddd_auth/application/sync_commands.py`
-   - `SyncIdentityProvider` Command
-   - `SyncIdentityProviderHandler`
-     - Syncs roles, groups, users from IdP to ABAC
-
-2. `src/cqrs_ddd_auth/contrib/scheduler.py` (optional)
-   - Cron-based scheduler integration for background sync
-
----
-
-## Step 26: Auth Router Factory
+## Step 26: [DONE] Auth Router Factory
 
 Create factory functions for framework-specific auth routers.
 
@@ -783,7 +975,7 @@ Create factory functions for framework-specific auth routers.
 
 ---
 
-## Step 27: Package Reorganization
+## Step 27: [DONE] Package Reorganization
 
 Reorganize package structure per proposal Section 12.
 
@@ -809,7 +1001,7 @@ cqrs_ddd_auth/
 
 ---
 
-## Step 28: Error Handling & Domain Errors
+## Step 28: [DONE] Error Handling & Domain Errors
 
 Implement comprehensive error types.
 
@@ -825,7 +1017,7 @@ Implement comprehensive error types.
 
 ---
 
-## Step 31: TokenRefreshAdapter
+## Step 31: [DONE] TokenRefreshAdapter
 
 Implement framework-agnostic token refresh logic.
 
@@ -842,7 +1034,7 @@ Implement framework-agnostic token refresh logic.
 
 ---
 
-## Step 32: AuthResult & TokenPair DTOs
+## Step 32: [DONE] AuthResult & TokenPair DTOs
 
 Implement result types for authentication commands.
 
@@ -855,7 +1047,7 @@ Implement result types for authentication commands.
 
 ---
 
-## Step 33: CompositeOTPService
+## Step 33: [DONE] CompositeOTPService
 
 Implement composite service that delegates to multiple OTP methods.
 
@@ -877,7 +1069,12 @@ composite = CompositeOTPService([
 
 ---
 
-## Step 34: Simple RBAC Adapter
+## Step 34: [DONE] Simple RBAC Adapter
+
+- Implemented `SimpleRBACAdapter`.
+- Added `OwnershipAwareRBACAdapter` for ownership checks.
+- Supported custom role extraction strategies.
+- Added `AuthorizationFilter` dataclass.
 
 Implement simple role-based adapter for non-ABAC deployments.
 
@@ -899,7 +1096,7 @@ rbac = SimpleRBACAdapter({
 
 ---
 
-## Step 35: DisableTOTP Command
+## Step 35: [DONE] DisableTOTP Command
 
 Implement TOTP removal for account security settings.
 

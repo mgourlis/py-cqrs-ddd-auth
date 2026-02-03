@@ -15,7 +15,7 @@ from cqrs_ddd_auth.identity import Identity, AnonymousIdentity
 class RequestContext:
     """
     Request-scoped context containing identity and metadata.
-    
+
     This is the primary mechanism for propagating authentication
     state through the application stack.
     """
@@ -36,7 +36,7 @@ request_context: ContextVar[Optional[RequestContext]] = ContextVar(
 def get_identity() -> Identity:
     """
     Get current identity from context.
-    
+
     Returns AnonymousIdentity if no context is set.
     """
     ctx = request_context.get()
@@ -46,7 +46,7 @@ def get_identity() -> Identity:
 def get_access_token() -> Optional[str]:
     """
     Get access token for downstream authorization calls.
-    
+
     Returns None if no context or token is set.
     """
     ctx = request_context.get()

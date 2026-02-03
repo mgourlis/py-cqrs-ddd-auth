@@ -1,3 +1,4 @@
+# ruff: noqa: E402, F401
 """
 Contrib modules for framework and library integrations.
 
@@ -14,6 +15,7 @@ __all__ = []
 # Dependency Injector integration
 try:
     from cqrs_ddd_auth.contrib.dependency_injector import AuthContainer
+
     HAS_DEPENDENCY_INJECTOR = True
     __all__.append("AuthContainer")
 except ImportError:
@@ -31,15 +33,18 @@ try:
         require_authenticated as django_require_authenticated,
         require_groups as django_require_groups,
     )
+
     HAS_DJANGO = True
-    __all__.extend([
-        "DjangoTokenRefreshMiddleware",
-        "DjangoAuthenticationMiddleware",
-        "django_extract_tokens",
-        "django_attach_tokens",
-        "django_require_authenticated",
-        "django_require_groups",
-    ])
+    __all__.extend(
+        [
+            "DjangoTokenRefreshMiddleware",
+            "DjangoAuthenticationMiddleware",
+            "django_extract_tokens",
+            "django_attach_tokens",
+            "django_require_authenticated",
+            "django_require_groups",
+        ]
+    )
 except ImportError:
     HAS_DJANGO = False
 
@@ -56,16 +61,41 @@ try:
         require_groups as fastapi_require_groups,
         create_get_identity_dependency,
     )
+
     HAS_FASTAPI = True
-    __all__.extend([
-        "FastAPITokenRefreshMiddleware",
-        "FastAPIAuthenticationMiddleware",
-        "fastapi_extract_tokens",
-        "fastapi_attach_tokens",
-        "get_current_user",
-        "fastapi_require_authenticated",
-        "fastapi_require_groups",
-        "create_get_identity_dependency",
-    ])
+    __all__.extend(
+        [
+            "FastAPITokenRefreshMiddleware",
+            "FastAPIAuthenticationMiddleware",
+            "fastapi_extract_tokens",
+            "fastapi_attach_tokens",
+            "get_current_user",
+            "fastapi_require_authenticated",
+            "fastapi_require_groups",
+            "create_get_identity_dependency",
+        ]
+    )
 except ImportError:
     HAS_FASTAPI = False
+
+# search_query_dsl integration
+try:
+    import search_query_dsl
+    from cqrs_ddd_auth.contrib.search_query_dsl import (
+        FieldMapping,
+        ABACConditionConverter,
+        AuthorizationFilter,
+    )
+
+    __all__.extend(
+        [
+            "FieldMapping",
+            "ABACConditionConverter",
+            "AuthorizationFilter",
+        ]
+    )
+except ImportError:
+    raise ImportError(
+        "search_query_dsl is required for ABAC filter integration. "
+        "Install it with: pip install search-query-dsl"
+    )

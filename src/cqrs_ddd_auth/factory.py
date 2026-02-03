@@ -6,23 +6,29 @@ Implements the 'if not provide create' pattern for framework integrations.
 
 import os
 import logging
-from typing import Optional, Any
+from typing import Any
 
-from cqrs_ddd_auth.ports.identity_provider import IdentityProviderPort
-from cqrs_ddd_auth.adapters.keycloak import KeycloakAdapter, KeycloakConfig
-from cqrs_ddd_auth.adapters.repositories import InMemorySessionRepository
+from cqrs_ddd_auth.infrastructure.ports.identity_provider import IdentityProviderPort
+from cqrs_ddd_auth.infrastructure.adapters.keycloak import (
+    KeycloakAdapter,
+    KeycloakConfig,
+)
+from cqrs_ddd_auth.infrastructure.adapters.session import InMemorySessionAdapter
+from cqrs_ddd_auth.infrastructure.adapters.elevation import InMemoryElevationStore
 
 logger = logging.getLogger(__name__)
+
 
 def create_default_idp() -> IdentityProviderPort:
     """
     Create a default IdentityProviderPort from environment variables or settings.
-    
+
     Tries to detect the framework and use appropriate configuration source.
     """
     # 1. Try Django settings first
     try:
         from django.conf import settings
+
         if hasattr(settings, "AUTH_KEYCLOAK"):
             k_config = settings.AUTH_KEYCLOAK
             config = KeycloakConfig(
@@ -35,7 +41,7 @@ def create_default_idp() -> IdentityProviderPort:
             return KeycloakAdapter(config)
     except (ImportError, Exception):
         pass
-        
+
     # 2. Fall back to environment variables
     server_url = os.environ.get("AUTH_KEYCLOAK_SERVER_URL")
     if server_url:
@@ -47,11 +53,14 @@ def create_default_idp() -> IdentityProviderPort:
             verify=os.environ.get("AUTH_KEYCLOAK_VERIFY", "true").lower() == "true",
         )
         return KeycloakAdapter(config)
-        
+
     # 3. Try legacy 'inject' library
     try:
         import inject as legacy_inject
-        from cqrs_ddd_auth.ports.identity_provider import IdentityProviderPort
+        from cqrs_ddd_auth.infrastructure.ports.identity_provider import (
+            IdentityProviderPort,
+        )
+
         idp = legacy_inject.instance(IdentityProviderPort)
         if idp:
             return idp
@@ -61,6 +70,12 @@ def create_default_idp() -> IdentityProviderPort:
     # 4. Last resort: Return None
     return None
 
+
 def create_default_session_repo() -> Any:
     """Create a default in-memory session repository."""
-    return InMemorySessionRepository()
+    return InMemorySessionAdapter()
+
+
+def create_default_elevation_store() -> Any:
+    """Create a default in-memory elevation store."""
+    return InMemoryElevationStore()

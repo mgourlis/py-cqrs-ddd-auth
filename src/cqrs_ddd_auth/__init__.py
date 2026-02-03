@@ -20,6 +20,18 @@ from cqrs_ddd_auth.context import (
     get_access_token,
 )
 
+# Middleware exports
+from cqrs_ddd_auth.middleware import (
+    AuthorizationMiddleware,
+    PermittedActionsMiddleware,
+    AuthorizationConfig,
+    PermittedActionsConfig,
+    AuthorizationError,
+    authorize,
+    permitted_actions,
+    register_abac_middleware,
+)
+
 __all__ = [
     # Version
     "__version__",
@@ -33,4 +45,13 @@ __all__ = [
     "request_context",
     "get_identity",
     "get_access_token",
+    # Middleware
+    "AuthorizationMiddleware",
+    "PermittedActionsMiddleware",
+    "AuthorizationConfig",
+    "PermittedActionsConfig",
+    "AuthorizationError",
+    "authorize",
+    "permitted_actions",
+    "register_abac_middleware",
 ]

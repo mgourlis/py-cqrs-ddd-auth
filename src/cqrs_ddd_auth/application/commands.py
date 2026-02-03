@@ -17,32 +17,37 @@ from cqrs_ddd.core import Command
 class AuthenticateWithCredentials(Command):
     """
     Initiate authentication with username/password.
-    
+
     Supports two modes:
     1. Stateless: No session_id needed, OTP can be sent in same request
     2. Stateful: Session tracking for multi-step flows
-    
+
     Stateless mode (like your legacy Django code):
         - Authenticate credentials → if OTP required, return otp_required
         - Client re-sends credentials + otp_method + otp_code
         - No server-side session needed
-    
+
     Stateful mode:
         - Creates AuthSession for tracking
         - Use session_id for subsequent ValidateOTP command
     """
+
     username: str
     password: str
-    
-    # Session tracking (optional - enable for stateful mode)
+
+    # Continuation context (for Step 2/3)
+    session_id: Optional[str] = None  # Stateful: Look up context from DB
+    pre_auth_token: Optional[str] = None  # Stateless: Encrypted context from client
+
+    # OTP data (for Stateless continuation)
+    otp_method: Optional[str] = None  # totp, email, sms
+    otp_code: Optional[str] = None
+
+    # Session tracking options
     track_session: bool = False
     ip_address: str = ""
     user_agent: str = ""
-    
-    # Inline OTP for stateless mode (like legacy flow)
-    otp_method: Optional[str] = None  # totp, email, sms
-    otp_code: Optional[str] = None
-    
+
     # Optional role/group checking
     required_groups: Optional[List[str]] = None  # User must be in at least one
 
@@ -51,12 +56,13 @@ class AuthenticateWithCredentials(Command):
 class ValidateOTP(Command):
     """
     Validate a one-time password (stateful mode).
-    
+
     Called after AuthenticateWithCredentials when:
     - track_session=True was used
     - OTP is required
     - Client sends session_id + OTP code
     """
+
     session_id: str
     code: str
     method: str = "totp"  # totp, email, sms
@@ -66,13 +72,18 @@ class ValidateOTP(Command):
 class SendOTPChallenge(Command):
     """
     Request an OTP challenge to be sent.
-    
+
     Used for email/SMS methods where the code needs to be delivered.
-    Can work with or without session_id.
+
+    Supports multiple modes for identifying the user:
+    - session_id: Look up from session (stateful mode)
+    - access_token: Decode claims from token (stateless mode)
+    - user_id: Look up user from admin port (saga/internal mode)
     """
-    session_id: Optional[str] = None  # Optional for stateless mode
-    user_claims_json: Optional[str] = None  # Alternative: pass claims directly
-    access_token: Optional[str] = None  # Alternative: pass token to decode
+
+    session_id: Optional[str] = None  # Stateful mode - look up from session
+    access_token: Optional[str] = None  # Stateless mode - decode from token
+    user_id: Optional[str] = None  # Saga/internal mode - look up from admin port
     method: str = ""  # email, sms
 
 
@@ -81,6 +92,7 @@ class RefreshTokens(Command):
     """
     Refresh access tokens using a refresh token.
     """
+
     refresh_token: str
 
 
@@ -89,8 +101,19 @@ class Logout(Command):
     """
     Terminate the current session and invalidate tokens.
     """
+
     refresh_token: str
     session_id: Optional[str] = None  # Optional - for stateful mode
+
+
+@dataclass(kw_only=True)
+class RevokeSession(Command):
+    """
+    Revoke a specific session (admin or user action).
+    """
+
+    session_id: str
+    reason: str = "revoked_by_user"
 
 
 @dataclass(kw_only=True)
@@ -98,6 +121,7 @@ class RevokeAllSessions(Command):
     """
     Revoke all sessions for a user (security action).
     """
+
     user_id: str
     reason: str = "security_action"
 
@@ -106,13 +130,15 @@ class RevokeAllSessions(Command):
 # TOTP SETUP COMMANDS
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass(kw_only=True)
 class SetupTOTP(Command):
     """
     Initialize TOTP setup for a user.
-    
+
     Returns a provisioning URI for QR code display.
     """
+
     user_id: str
 
 
@@ -120,9 +146,10 @@ class SetupTOTP(Command):
 class ConfirmTOTPSetup(Command):
     """
     Confirm TOTP setup by validating the first code.
-    
+
     This verifies the user has correctly configured their authenticator.
     """
+
     user_id: str
     secret: str  # The secret from setup step
     code: str  # The verification code
@@ -133,6 +160,7 @@ class DisableTOTP(Command):
     """
     Disable TOTP 2FA for a user.
     """
+
     user_id: str
     verification_code: str  # Require current TOTP code to disable
 
@@ -141,13 +169,15 @@ class DisableTOTP(Command):
 # USER MANAGEMENT COMMANDS
 # ═══════════════════════════════════════════════════════════════
 
+
 @dataclass(kw_only=True)
 class CreateUser(Command):
     """
     Create a new user in the identity provider.
-    
+
     Returns the created user's ID.
     """
+
     username: str
     email: str
     first_name: str = ""
@@ -163,9 +193,10 @@ class CreateUser(Command):
 class UpdateUser(Command):
     """
     Update an existing user's attributes.
-    
+
     Only non-None fields will be updated.
     """
+
     user_id: str
     email: Optional[str] = None
     first_name: Optional[str] = None
@@ -180,6 +211,7 @@ class DeleteUser(Command):
     """
     Delete a user from the identity provider.
     """
+
     user_id: str
 
 
@@ -188,6 +220,7 @@ class SetUserPassword(Command):
     """
     Set a user's password.
     """
+
     user_id: str
     password: str
     temporary: bool = False  # If True, user must change on next login
@@ -198,6 +231,7 @@ class SendPasswordReset(Command):
     """
     Trigger password reset email for a user.
     """
+
     user_id: str
 
 
@@ -206,6 +240,7 @@ class SendVerifyEmail(Command):
     """
     Send email verification email to a user.
     """
+
     user_id: str
 
 
@@ -214,6 +249,7 @@ class AssignRoles(Command):
     """
     Assign roles to a user.
     """
+
     user_id: str
     role_names: List[str]
 
@@ -223,6 +259,7 @@ class RemoveRoles(Command):
     """
     Remove roles from a user.
     """
+
     user_id: str
     role_names: List[str]
 
@@ -232,6 +269,7 @@ class AddToGroups(Command):
     """
     Add a user to groups.
     """
+
     user_id: str
     group_ids: List[str]
 
@@ -241,5 +279,39 @@ class RemoveFromGroups(Command):
     """
     Remove a user from groups.
     """
+
     user_id: str
     group_ids: List[str]
+
+
+@dataclass(kw_only=True)
+class GrantTemporaryElevation(Command):
+    """
+    Grant temporary elevated privileges to a user.
+    Used by the StepUpAuthenticationSaga.
+    """
+
+    user_id: str
+    action: str
+    ttl_seconds: int = 300
+
+
+@dataclass(kw_only=True)
+class RevokeElevation(Command):
+    """
+    Revoke temporary elevated privileges from a user.
+    Used by the StepUpAuthenticationSaga.
+    """
+
+    user_id: str
+    reason: str = "completed"
+
+
+@dataclass(kw_only=True)
+class ResumeSensitiveOperation(Command):
+    """
+    Signal to resume a suspended sensitive operation.
+    Used by the StepUpAuthenticationSaga after successful auth.
+    """
+
+    operation_id: str

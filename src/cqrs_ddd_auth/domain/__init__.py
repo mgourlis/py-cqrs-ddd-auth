@@ -23,6 +23,20 @@ from cqrs_ddd_auth.domain.events import (
     SessionRevoked,
     TokenRefreshed,
     TokenExpired,
+    # Saga Events
+    SensitiveOperationRequested,
+    SensitiveOperationCompleted,
+    TemporaryElevationGranted,
+    TemporaryElevationRevoked,
+    # Identity change events (trigger ABAC sync)
+    IdentityChanged,
+    UserCreatedInIdP,
+    UserUpdatedInIdP,
+    UserDeletedInIdP,
+    UserRolesAssigned,
+    UserRolesRemoved,
+    UserAddedToGroups,
+    UserRemovedFromGroups,
 )
 from cqrs_ddd_auth.domain.aggregates import (
     AuthSession,
@@ -56,6 +70,20 @@ __all__ = [
     "SessionRevoked",
     "TokenRefreshed",
     "TokenExpired",
+    # Saga Events
+    "SensitiveOperationRequested",
+    "SensitiveOperationCompleted",
+    "TemporaryElevationGranted",
+    "TemporaryElevationRevoked",
+    # Identity change events
+    "IdentityChanged",
+    "UserCreatedInIdP",
+    "UserUpdatedInIdP",
+    "UserDeletedInIdP",
+    "UserRolesAssigned",
+    "UserRolesRemoved",
+    "UserAddedToGroups",
+    "UserRemovedFromGroups",
     # Aggregates & Entities
     "AuthSession",
     "AuthSessionStatus",
