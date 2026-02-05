@@ -37,7 +37,7 @@ dependencies = [
 
 [project.optional-dependencies]
 di = [
-    "dependency-injector>=4.41.0",
+    "py-cqrs-ddd-toolkit[inject]",
 ]
 keycloak = [
     "python-keycloak>=3.0.0",
@@ -45,11 +45,10 @@ keycloak = [
     "httpx>=0.25",
 ]
 fastapi = [
-    "fastapi>=0.100",
-    "pydantic>=2.0",
+    "py-cqrs-ddd-toolkit[fastapi]",
 ]
 django = [
-    "django>=4.2",
+    "py-cqrs-ddd-toolkit[django]",
 ]
 dev = [
     "pytest>=7.0",

@@ -135,6 +135,7 @@ class UserClaims(ValueObject):
     username: str
     email: str
     groups: tuple[str, ...]  # Raw group paths from token
+    phone_number: Optional[str] = None
     roles: tuple[AuthRole, ...] = field(default_factory=tuple)  # Unified roles
     attributes: dict = field(default_factory=dict)
 
@@ -144,6 +145,7 @@ class UserClaims(ValueObject):
             sub=data["sub"],
             username=data["username"],
             email=data["email"],
+            phone_number=data.get("phone_number"),
             groups=tuple(data.get("groups", [])),
             attributes={
                 k: v
@@ -157,6 +159,7 @@ class UserClaims(ValueObject):
             "sub": self.sub,
             "username": self.username,
             "email": self.email,
+            "phone_number": self.phone_number,
             "groups": list(self.groups),
             **self.attributes,
         }
@@ -220,4 +223,5 @@ class UserClaims(ValueObject):
             groups=list(self.groups),
             permissions=[],  # Fetched separately from ABAC
             tenant_id=self.attributes.get("tenant_id"),
+            # phone_number can also be passed if needed in identity
         )

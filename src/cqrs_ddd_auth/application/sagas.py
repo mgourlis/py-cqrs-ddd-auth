@@ -1,6 +1,7 @@
-from __future__ import annotations
+from datetime import timedelta
 from dataclasses import dataclass
 from cqrs_ddd.saga import Saga, saga_step
+from cqrs_ddd.contrib.tracing import traced_saga
 from cqrs_ddd_auth.domain.events import (
     SensitiveOperationRequested,
     OTPValidated,
@@ -23,13 +24,14 @@ class StepUpState:
     required_action: str = None
 
 
+@traced_saga
 class StepUpAuthenticationSaga(Saga[StepUpState]):
     """
     Handles step-up authentication for sensitive operations.
 
     Flow:
-    1. Sensitive operation requested → Issue OTP challenge
-    2. OTP validated → Grant temporary elevated access & resume operation
+    1. Sensitive operation requested → Issue OTP challenge & Suspend
+    2. OTP validated → Resume, Grant temporary elevated access & resume operation
     3. Operation completed OR timeout → Revoke elevation
     """
 
@@ -49,11 +51,18 @@ class StepUpAuthenticationSaga(Saga[StepUpState]):
             )
         )
 
+        # Suspend saga while waiting for user interaction (OTP)
+        # Timeout after 5 minutes (standard security practice)
+        self.suspend(reason="waiting_for_otp", timeout=timedelta(minutes=5))
+
     @saga_step(OTPValidated)
     async def on_otp_validated(self, event: OTPValidated):
         # Verify this OTP validation belongs to our user
         if event.user_id != self.state.user_id:
             return
+
+        # Resume execution
+        self.resume()
 
         if self.state.required_action and self.state.operation_id:
             self.dispatch_command(
@@ -76,3 +85,15 @@ class StepUpAuthenticationSaga(Saga[StepUpState]):
         if self.state.user_id:
             self.dispatch_command(RevokeElevation(user_id=self.state.user_id))
         self.complete()
+
+    async def on_timeout(self) -> None:
+        """
+        Handle MFA timeout.
+        If the user takes too long, we ensure any partial progress is cleared.
+        """
+        if self.state.user_id:
+            # Ensure any lingering elevation is revoked
+            self.dispatch_command(RevokeElevation(user_id=self.state.user_id))
+
+        # Mark saga as failed due to timeout
+        self.fail(f"MFA timeout for operation {self.state.operation_id}")

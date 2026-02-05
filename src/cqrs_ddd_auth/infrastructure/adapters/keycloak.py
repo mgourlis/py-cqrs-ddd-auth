@@ -62,6 +62,11 @@ class KeycloakConfig:
     username_claim: str = "preferred_username"
     email_claim: str = "email"
     groups_claim: str = "groups"  # or "realm_access.roles"
+    tenant_id_claim: str = "tenant_id"  # Custom claim for multi-tenancy
+    use_realm_as_tenant: bool = (
+        False  # If True, uses the realm name as tenant ID fallback
+    )
+    phone_number_claim: str = "phone_number"  # Custom claim for phone number
 
     # Token validation
     verify: bool = True
@@ -284,13 +289,24 @@ class KeycloakAdapter(IdentityProviderPort):
                 )
                 roles.extend(group_roles)
 
+        # 4. Resolve Tenant ID
+        tenant_id = payload.get(self.config.tenant_id_claim)
+        if not tenant_id and self.config.use_realm_as_tenant:
+            tenant_id = self.config.realm
+
+        # 5. Build attributes and ensure tenant_id is included
+        attributes = payload.copy()
+        if tenant_id:
+            attributes["tenant_id"] = tenant_id
+
         return UserClaims(
             sub=payload.get("sub", ""),
             username=payload.get("preferred_username", payload.get("sub", "")),
             email=payload.get("email", ""),
+            phone_number=payload.get(self.config.phone_number_claim),
             groups=raw_groups,
             roles=tuple(roles),
-            attributes=payload,
+            attributes=attributes,
         )
 
     def _group_path_to_roles(

@@ -10,11 +10,11 @@ Uses DomainEvent base class from py-cqrs-ddd-toolkit.
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
-from cqrs_ddd.ddd import DomainEvent
+from cqrs_ddd_auth.ddd import AuthDomainEvent
 
 
 @dataclass
-class AuthSessionCreated(DomainEvent):
+class AuthSessionCreated(AuthDomainEvent):
     """Raised when a new authentication session is started."""
 
     session_id: Optional[str] = None
@@ -43,7 +43,7 @@ class AuthSessionCreated(DomainEvent):
 
 
 @dataclass
-class CredentialsValidated(DomainEvent):
+class CredentialsValidated(AuthDomainEvent):
     """Raised when primary credentials (username/password) are validated."""
 
     session_id: Optional[str] = None
@@ -72,7 +72,7 @@ class CredentialsValidated(DomainEvent):
 
 
 @dataclass
-class OTPRequired(DomainEvent):
+class OTPRequired(AuthDomainEvent):
     """Raised when multi-factor authentication is required."""
 
     session_id: Optional[str] = None
@@ -101,7 +101,7 @@ class OTPRequired(DomainEvent):
 
 
 @dataclass
-class OTPChallengeIssued(DomainEvent):
+class OTPChallengeIssued(AuthDomainEvent):
     """Raised when an OTP challenge is sent (email/SMS)."""
 
     session_id: Optional[str] = None
@@ -130,7 +130,7 @@ class OTPChallengeIssued(DomainEvent):
 
 
 @dataclass
-class OTPValidated(DomainEvent):
+class OTPValidated(AuthDomainEvent):
     """Raised when OTP is successfully validated."""
 
     session_id: Optional[str] = None
@@ -159,7 +159,7 @@ class OTPValidated(DomainEvent):
 
 
 @dataclass
-class OTPValidationFailed(DomainEvent):
+class OTPValidationFailed(AuthDomainEvent):
     """Raised when OTP validation fails."""
 
     session_id: Optional[str] = None
@@ -188,7 +188,7 @@ class OTPValidationFailed(DomainEvent):
 
 
 @dataclass
-class AuthenticationSucceeded(DomainEvent):
+class AuthenticationSucceeded(AuthDomainEvent):
     """Raised when the full authentication flow completes successfully."""
 
     session_id: Optional[str] = None
@@ -221,7 +221,7 @@ class AuthenticationSucceeded(DomainEvent):
 
 
 @dataclass
-class AuthenticationFailed(DomainEvent):
+class AuthenticationFailed(AuthDomainEvent):
     """Raised when authentication fails at any step."""
 
     session_id: Optional[str] = None
@@ -252,7 +252,7 @@ class AuthenticationFailed(DomainEvent):
 
 
 @dataclass
-class SessionRevoked(DomainEvent):
+class SessionRevoked(AuthDomainEvent):
     """Raised when a session is explicitly revoked (logout)."""
 
     session_id: Optional[str] = None
@@ -281,7 +281,7 @@ class SessionRevoked(DomainEvent):
 
 
 @dataclass
-class TokenRefreshed(DomainEvent):
+class TokenRefreshed(AuthDomainEvent):
     """Raised when tokens are refreshed."""
 
     session_id: Optional[str] = None
@@ -306,7 +306,7 @@ class TokenRefreshed(DomainEvent):
 
 
 @dataclass
-class TokenExpired(DomainEvent):
+class TokenExpired(AuthDomainEvent):
     """Raised when a token expires."""
 
     session_id: Optional[str] = None
@@ -339,7 +339,7 @@ class TokenExpired(DomainEvent):
 
 
 @dataclass
-class IdentityChanged(DomainEvent):
+class IdentityChanged(AuthDomainEvent):
     """
     Base event for identity changes that require ABAC sync.
 
@@ -369,7 +369,7 @@ class IdentityChanged(DomainEvent):
 
 
 @dataclass
-class UserCreatedInIdP(DomainEvent):
+class UserCreatedInIdP(AuthDomainEvent):
     """Raised when a new user is created in the identity provider."""
 
     idp_user_id: str = ""
@@ -396,7 +396,7 @@ class UserCreatedInIdP(DomainEvent):
 
 
 @dataclass
-class UserUpdatedInIdP(DomainEvent):
+class UserUpdatedInIdP(AuthDomainEvent):
     """Raised when a user is updated in the identity provider."""
 
     idp_user_id: str = ""
@@ -421,7 +421,7 @@ class UserUpdatedInIdP(DomainEvent):
 
 
 @dataclass
-class UserDeletedInIdP(DomainEvent):
+class UserDeletedInIdP(AuthDomainEvent):
     """Raised when a user is deleted from the identity provider."""
 
     idp_user_id: str = ""
@@ -446,7 +446,7 @@ class UserDeletedInIdP(DomainEvent):
 
 
 @dataclass
-class UserRolesAssigned(DomainEvent):
+class UserRolesAssigned(AuthDomainEvent):
     """Raised when roles are assigned to a user."""
 
     idp_user_id: str = ""
@@ -474,7 +474,7 @@ class UserRolesAssigned(DomainEvent):
 
 
 @dataclass
-class UserRolesRemoved(DomainEvent):
+class UserRolesRemoved(AuthDomainEvent):
     """Raised when roles are removed from a user."""
 
     idp_user_id: str = ""
@@ -502,7 +502,7 @@ class UserRolesRemoved(DomainEvent):
 
 
 @dataclass
-class UserAddedToGroups(DomainEvent):
+class UserAddedToGroups(AuthDomainEvent):
     """Raised when a user is added to groups."""
 
     idp_user_id: str = ""
@@ -530,7 +530,7 @@ class UserAddedToGroups(DomainEvent):
 
 
 @dataclass
-class UserRemovedFromGroups(DomainEvent):
+class UserRemovedFromGroups(AuthDomainEvent):
     """Raised when a user is removed from groups."""
 
     idp_user_id: str = ""
@@ -558,7 +558,7 @@ class UserRemovedFromGroups(DomainEvent):
 
 
 @dataclass
-class SensitiveOperationRequested(DomainEvent):
+class SensitiveOperationRequested(AuthDomainEvent):
     """
     Raised when a user requests a sensitive operation requiring step-up auth.
     """
@@ -587,7 +587,7 @@ class SensitiveOperationRequested(DomainEvent):
 
 
 @dataclass
-class SensitiveOperationCompleted(DomainEvent):
+class SensitiveOperationCompleted(AuthDomainEvent):
     """
     Raised when a sensitive operation is completed.
     Signals the saga to revoke temporary elevation.
@@ -615,7 +615,7 @@ class SensitiveOperationCompleted(DomainEvent):
 
 
 @dataclass
-class TemporaryElevationGranted(DomainEvent):
+class TemporaryElevationGranted(AuthDomainEvent):
     """
     Raised when temporary elevated privileges are granted.
     """
@@ -644,7 +644,7 @@ class TemporaryElevationGranted(DomainEvent):
 
 
 @dataclass
-class TemporaryElevationRevoked(DomainEvent):
+class TemporaryElevationRevoked(AuthDomainEvent):
     """
     Raised when temporary elevated privileges are revoked.
     """

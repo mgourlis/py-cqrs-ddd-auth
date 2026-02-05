@@ -13,6 +13,29 @@ from cqrs_ddd_auth.identity import (
     SystemIdentity,
     AuthenticatedIdentity,
 )
+from cqrs_ddd_auth.ddd import (
+    AuthEntity,
+    AuthDomainEvent,
+    AuthStoredEvent,
+)
+from cqrs_ddd_auth.undo import AuthUndoService
+from cqrs_ddd_auth.event_store import AuthInMemoryEventStore
+
+try:
+    from cqrs_ddd_auth.infrastructure.persistence.sqlalchemy_event_store import (
+        AuthSQLAlchemyEventStore,
+    )
+except ImportError:
+    # SQLAlchemy might not be installed
+    AuthSQLAlchemyEventStore = None
+
+from cqrs_ddd_auth.contrib.pydantic import HAS_PYDANTIC
+
+if HAS_PYDANTIC:
+    from cqrs_ddd_auth.contrib.pydantic import (
+        PydanticAuthEntity,
+        PydanticAuthDomainEvent,
+    )
 from cqrs_ddd_auth.context import (
     RequestContext,
     request_context,
@@ -54,4 +77,18 @@ __all__ = [
     "authorize",
     "permitted_actions",
     "register_abac_middleware",
+    # DDD
+    "AuthEntity",
+    "AuthDomainEvent",
+    "AuthStoredEvent",
+    "AuthUndoService",
+    # Event Store
+    "AuthInMemoryEventStore",
+    "AuthSQLAlchemyEventStore",
 ]
+
+if HAS_PYDANTIC:
+    __all__ += [
+        "PydanticAuthEntity",
+        "PydanticAuthDomainEvent",
+    ]

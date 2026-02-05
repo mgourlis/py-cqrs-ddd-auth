@@ -78,6 +78,18 @@ from cqrs_ddd_auth.infrastructure.adapters.sqlalchemy_storage import (
     SQLAlchemyTOTPSecretAdapter,
 )
 from cqrs_ddd_auth.infrastructure.adapters.elevation import RedisElevationStore
+from cqrs_ddd_auth.event_store import AuthInMemoryEventStore
+from cqrs_ddd_auth.undo import AuthUndoService
+
+try:
+    from cqrs_ddd_auth.infrastructure.persistence.sqlalchemy_event_store import (
+        AuthSQLAlchemyEventStore,
+    )
+
+    HAS_SA_STORE = True
+except ImportError:
+    HAS_SA_STORE = False
+    AuthSQLAlchemyEventStore = None
 
 
 class AuthContainer(ToolkitContainer):
@@ -158,6 +170,24 @@ class AuthContainer(ToolkitContainer):
             realm=config.keycloak.realm,
             client_id=config.keycloak.client_id,
             client_secret=config.keycloak.client_secret,
+            username_claim=config.keycloak.username_claim.as_default(
+                "preferred_username"
+            ),
+            email_claim=config.keycloak.email_claim.as_default("email"),
+            groups_claim=config.keycloak.groups_claim.as_default("groups"),
+            verify=config.keycloak.verify.as_default(True),
+            merge_groups_as_roles=config.keycloak.merge_groups_as_roles.as_default(
+                True
+            ),
+            group_path_strategy=config.keycloak.group_path_strategy.as_default(
+                "full_path"
+            ),
+            group_prefix=config.keycloak.group_prefix.as_default(""),
+            tenant_id_claim=config.keycloak.tenant_id_claim.as_default("tenant_id"),
+            use_realm_as_tenant=config.keycloak.use_realm_as_tenant.as_default(False),
+            phone_number_claim=config.keycloak.phone_number_claim.as_default(
+                "phone_number"
+            ),
         ),
     )
 
@@ -172,6 +202,7 @@ class AuthContainer(ToolkitContainer):
             realm=config.keycloak.realm,
             client_id=config.keycloak.admin_client_id,
             client_secret=config.keycloak.admin_client_secret,
+            verify=config.keycloak.verify.as_default(True),
         ),
     )
 
@@ -200,6 +231,19 @@ class AuthContainer(ToolkitContainer):
 
     # Optional - for ABAC authorization queries
     abac_authorization = providers.Dependency(default=None)
+
+    # ═══════════════════════════════════════════════════════════════
+    # TOOLKIT OVERRIDES (Identity-Aware)
+    # ═══════════════════════════════════════════════════════════════
+
+    event_store = providers.Singleton(AuthInMemoryEventStore)
+
+    undo_service = providers.Singleton(
+        AuthUndoService,
+        event_store=event_store,
+        executor_registry=ToolkitContainer.undo_registry,
+        cache_service=ToolkitContainer.cache_service,
+    )
 
     # ═══════════════════════════════════════════════════════════════
     # OTP SERVICES
@@ -572,6 +616,12 @@ class SQLAlchemyAuthContainer(containers.DeclarativeContainer):
         SQLAlchemyTOTPSecretAdapter,
         session_factory=session_factory,
     )
+
+    if HAS_SA_STORE:
+        event_store = providers.Singleton(
+            AuthSQLAlchemyEventStore,
+            uow_factory=ToolkitContainer.uow_factory,
+        )
 
 
 class RedisAuthContainer(containers.DeclarativeContainer):
