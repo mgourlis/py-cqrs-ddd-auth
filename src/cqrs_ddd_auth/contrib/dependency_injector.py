@@ -80,6 +80,10 @@ from cqrs_ddd_auth.infrastructure.adapters.sqlalchemy_storage import (
 from cqrs_ddd_auth.infrastructure.adapters.elevation import RedisElevationStore
 from cqrs_ddd_auth.event_store import AuthInMemoryEventStore
 from cqrs_ddd_auth.undo import AuthUndoService
+from cqrs_ddd_auth.infrastructure.ports.communication import (
+    EmailSenderPort,
+    SMSSenderPort,
+)
 
 try:
     from cqrs_ddd_auth.infrastructure.persistence.sqlalchemy_event_store import (
@@ -222,8 +226,8 @@ class AuthContainer(ToolkitContainer):
     )
 
     # Optional - must be provided by app if needed
-    email_sender = providers.Dependency(default=None)
-    sms_sender = providers.Dependency(default=None)
+    email_sender = providers.Dependency(instance_of=EmailSenderPort, default=None)
+    sms_sender = providers.Dependency(instance_of=SMSSenderPort, default=None)
 
     # Optional - for step-up auth / saga handlers
     elevation_store = providers.Dependency(default=None)

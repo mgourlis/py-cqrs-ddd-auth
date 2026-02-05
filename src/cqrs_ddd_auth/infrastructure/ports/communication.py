@@ -5,12 +5,21 @@ Defines protocols for sending messages via various channels (Email, SMS).
 """
 
 from dataclasses import dataclass, field
-from typing import Protocol, List, Optional, Any
+from typing import Protocol, List, Optional
 
 
 # ═══════════════════════════════════════════════════════════════
 # DATA TRANSFER OBJECTS
 # ═══════════════════════════════════════════════════════════════
+
+
+@dataclass
+class EmailAttachment:
+    """Structure for email attachments."""
+
+    filename: str
+    content: bytes
+    mimetype: str
 
 
 @dataclass
@@ -25,7 +34,7 @@ class EmailMessage:
     cc: List[str] = field(default_factory=list)
     bcc: List[str] = field(default_factory=list)
     reply_to: Optional[str] = None
-    attachments: List[Any] = field(default_factory=list)
+    attachments: List[EmailAttachment] = field(default_factory=list)
 
 
 @dataclass
